@@ -67,6 +67,7 @@
     <div class="px-3 py-1.5 flex items-center gap-1.5 border-b border-slate-800 shrink-0 bg-slate-950/60">
       <button type="button" onclick="newChat()" class="text-[12px] font-bold bg-emerald-600 active:bg-emerald-500 text-white px-3 py-1.5 rounded-xl">➕ دردشة جديدة</button>
       <button type="button" onclick="openChatList()" class="text-[12px] font-bold bg-slate-800 border border-slate-700 text-emerald-300 px-3 py-1.5 rounded-xl active:scale-95">🗂 الدردشات <span id="chatCount">(0)</span></button>
+      <select id="answerModeSelect" onchange="setAnswerMode(this.value)" class="text-[11px] bg-slate-800 border border-slate-700 text-sky-300 px-2 py-1.5 rounded-xl"><option value="ai">🤖 ذكي</option><option value="local">🔎 محلي بدون مفاتيح</option></select>
       <button type="button" onclick="deleteCurrentChat()" class="text-[12px] bg-slate-800 border border-slate-700 text-red-300 px-3 py-1.5 rounded-xl active:scale-95 mr-auto" title="حذف الدردشة الحالية">🗑</button>
     </div>
     <main id="chatContainer" class="flex-1 overflow-y-auto smooth-scroll px-4 py-3 space-y-3.5 select-text">
@@ -555,11 +556,13 @@
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400">${src.type}</span>
                 <span class="text-[10px] text-slate-400">${src.pages ? src.pages.length : 0}${src.complete === false && src.totalPages ? ' من ' + src.totalPages : ''} صفحة</span>
                 ${src.complete === false ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">⚠️ غير مكتمل، أعد اختيار الملف لإكماله</span>' : ''}
+                ${(() => { const st = sourceStats(src); return '<span class="text-[10px] px-1.5 py-0.5 rounded ' + (st.text === 0 ? 'bg-red-500/15 text-red-300' : (st.empty ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')) + '">نص: ' + st.text + '/' + st.total + '</span>'; })()}
                 ${src.ocrIncomplete ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">📝 OCR غير مكتمل، أعد اختيار الملف لاحقاً</span>' : ''}
               </div>
             </div>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
+            ${(src.pages || []).some(p => p.image && !pageHasText(p)) ? `<button type="button" onclick="ocrSource('${src.id}')" class="px-2 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-bold active:scale-95">📝 استخراج النص OCR</button>` : ''}
             <button type="button" onclick="openTranslateModal('${src.id}')" class="px-2 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-bold active:scale-95" title="ترجمة المصدر">
               🌐 ترجمة
             </button>
@@ -1169,6 +1172,116 @@
       return text.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[ً-ٟ]/g, '').toLowerCase();
     }
 
+
+    // ==================== بحث محلي بدون مفاتيح (BM25 عربي) ====================
+    let answerMode = localStorage.getItem('baheth_answer_mode') || 'ai';
+    function setAnswerMode(v) { answerMode = v; localStorage.setItem('baheth_answer_mode', v); }
+    (function () { const el = document.getElementById('answerModeSelect'); if (el) el.value = answerMode; })();
+
+    function nrm(t) {
+      return String(t || '').normalize('NFKC').replace(/[\u0640\u064B-\u065F\u0670\u06D6-\u06ED]/g, '')
+        .replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
+        .replace(/[\u06A9]/g, 'ك').replace(/[\u06CC]/g, 'ي').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).toLowerCase();
+    }
+    const STOP = new Set(['من','في','على','الي','عن','هل','ما','ماذا','هي','هو','هذا','هذه','ذلك','تلك','كان','كانت','ان','او','ثم','كيف','متي','اين','لماذا','الذي','التي','مع','بين','كل','قد','لا','لم','لن','انه','انها','اذكر','اشرح','وضح','ابي','ابغي','اريد','لي','لك','عند','حول','هنا','هناك','وش','ايش','شو','تقع','يقع','وين','لخص','ملخص','تلخيص','كتاب','الكتاب','اهم','النقاط','نقاط','الصفحات','صفحات','المصادر','مصادر','ذكر','بعض','جميع']);
+    function stem(w) {
+      let x = w.replace(/^(وال|بال|كال|فال|لل|ال)(?=.{3,})/, '');
+      x = x.replace(/^[وبلفك](?=.{4,})/, '');
+      x = x.replace(/(ات|ون|ين|ان|ها|هم|ه|ي)$/, m => x.length - m.length >= 3 ? '' : m);
+      return x;
+    }
+    function tokenize(t, dropStop) {
+      return nrm(t).split(/[^a-z0-9\u0621-\u064A]+/).filter(w => w.length > 1).filter(w => !(dropStop && STOP.has(w))).map(stem).filter(w => w.length > 1 && !(dropStop && STOP.has(w)));
+    }
+    function isSummaryIntent(q) { return /لخص|ملخص|تلخيص|اهم النقاط|اهم الافكار|خلاصه/.test(nrm(q)); }
+    function isListIntent(q) {
+      const n = nrm(q).trim();
+      return n.split(/\s+/).length <= 6 && !isSummaryIntent(q) && /^(ما|وش|ايش|اعرض|اظهر|عرض)?\s*(هي|هو)?\s*(ال)?(مصادر|كتب|ملفات)/.test(n.replace(/^(ما|وش|ايش)\s+(هي|هو)?\s*/, '$&'));
+    }
+    function pageHasText(p) { return !!(p.text && p.text.trim().length > 20); }
+    function sourceStats(src) {
+      const pages = src.pages || [];
+      const text = pages.filter(pageHasText).length;
+      return { total: pages.length, text, empty: pages.length - text };
+    }
+    function buildLocalIndex(allPages) {
+      const docs = allPages.filter(pageHasText).map(p => {
+        const toks = tokenize(p.text, true); const tf = {};
+        toks.forEach(w => { tf[w] = (tf[w] || 0) + 1; });
+        return { p, tf, len: toks.length || 1 };
+      });
+      const df = {}; docs.forEach(d => Object.keys(d.tf).forEach(w => { df[w] = (df[w] || 0) + 1; }));
+      const avg = docs.reduce((a, d) => a + d.len, 0) / (docs.length || 1);
+      return { docs, df, avg, N: docs.length };
+    }
+    function bm25Search(idx, query, k) {
+      const qt = Array.from(new Set(tokenize(query, true)));
+      if (!qt.length || !idx.N) return { terms: qt, hits: [] };
+      const k1 = 1.5, b = 0.75;
+      const hits = [];
+      idx.docs.forEach(d => {
+        let sc = 0, matched = 0;
+        qt.forEach(w => {
+          const f = d.tf[w]; if (!f) return; matched++;
+          const n = idx.df[w];
+          const idf = Math.log(1 + (idx.N - n + 0.5) / (n + 0.5));
+          sc += idf * (f * (k1 + 1)) / (f + k1 * (1 - b + b * d.len / idx.avg));
+        });
+        if (sc > 0) hits.push({ page: d.p, score: sc * (1 + 0.3 * (matched - 1)), matched });
+      });
+      hits.sort((a, b2) => b2.score - a.score);
+      return { terms: qt, hits: hits.slice(0, k) };
+    }
+    function snippetAround(text, terms, len) {
+      const flat = String(text).replace(/\s+/g, ' ').trim();
+      let best = 0;
+      const words = flat.split(' ');
+      for (let i = 0; i < words.length; i++) {
+        const stw = tokenize(words[i], false)[0];
+        if (stw && terms.includes(stw)) { best = flat.indexOf(words[i]); break; }
+      }
+      let start = Math.max(0, best - Math.floor(len / 3));
+      let out = flat.slice(start, start + len);
+      return (start > 0 ? '...' : '') + out + (start + len < flat.length ? '...' : '');
+    }
+    function sampleEvenly(pages, n) {
+      if (pages.length <= n) return pages;
+      const out = []; for (let i = 0; i < n; i++) out.push(pages[Math.floor(i * pages.length / n)]);
+      return out;
+    }
+    function textlessNote(activeSources) {
+      const bad = activeSources.map(s => ({ s, st: sourceStats(s) })).filter(x => x.st.empty > 0 && x.st.text < x.st.total);
+      if (!bad.length) return '';
+      return '\n\n⚠️ تنبيه: ' + bad.map(x => '«' + x.s.title + '» نصه المستخرج ' + x.st.text + ' من ' + x.st.total + ' صفحة' + (x.st.text === 0 ? ' (ما فيه نص إطلاقاً، الكتاب صور فقط)' : '')).join('، ') + '. الصفحات بدون نص ما تدخل في البحث. افتح تبويبة الملفات واضغط "استخراج النص OCR" للكتاب.';
+    }
+    function modelAnswerNote() { return ''; }
+
+    async function ocrSource(id) {
+      const src = sources.find(s => s.id === id); if (!src) return;
+      if (!ENGINES.some(e => keys[e])) { alert('أضف مفتاح محرك في الإعدادات أولاً (OCR يحتاج نموذج ذكاء). بدون مفتاح ما يمكن قراءة صور الكتب.'); return; }
+      const todo = (src.pages || []).filter(p => p.image && !pageHasText(p));
+      if (!todo.length) { alert('كل صفحات هذا المصدر فيها نص.'); return; }
+      const groupSize = 4; let stopped = false, fails = 0, done = 0;
+      for (let g = 0; g < todo.length && !stopped; g += groupSize) {
+        const group = todo.slice(g, g + groupSize);
+        showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')', Math.round(g / todo.length * 100));
+        try {
+          const parts = await runOcrOnPages(group.map(p => p.image), ocrEngine);
+          if (parts.length === group.length) group.forEach((p, i) => { p.text = parts[i] || ''; });
+          else for (const p of group) { try { p.text = await runOcrOnImage(p.image, ocrEngine); } catch (e2) { if (isQuotaError(e2)) { stopped = true; break; } } }
+          fails = 0;
+        } catch (err) { fails++; if (isQuotaError(err) || fails >= 2) { stopped = true; src._ocrErr = (err && err.message) || String(err); } }
+        done = (src.pages || []).filter(pageHasText).length;
+        await dbPut(src); renderSources();
+      }
+      hideProgress();
+      const st = sourceStats(src);
+      if (st.text > 0) { src.type = 'PDF نصي'; }
+      if (st.empty === 0) delete src.ocrIncomplete; else src.ocrIncomplete = true;
+      await dbPut(src); renderSources();
+      alert(stopped ? ('⏸ توقف الاستخراج (غالباً انتهت الحصة). تم ' + st.text + ' من ' + st.total + ' صفحة. اضغط الزر مرة ثانية لاحقاً لإكمال الباقي.') : ('✅ تم استخراج النص: ' + st.text + ' من ' + st.total + ' صفحة.'));
+    }
+
     async function sendMessage() {
       const input = document.getElementById('userInput');
       const query = input.value.trim();
@@ -1189,50 +1302,65 @@
       }
 
       const qNorm = normalizeArabic(query);
-      if (qNorm.includes('مصادر') || qNorm.includes('كتب') || qNorm.includes('موجوده')) {
-        const list = activeSources.map((s, i) => (i + 1) + '. ' + s.title + ' [' + s.type + ' - ' + s.pages.length + ' صفحة]').join('\n');
-        updateMessage(loadingId, '📚 المصادر المفعّلة حالياً:\n\n' + list, [], shouldAutoSpeak);
+      if (isListIntent(query)) {
+        const list = activeSources.map((s, i) => { const st = sourceStats(s); return (i + 1) + '. ' + s.title + ' [' + s.type + ' - ' + st.total + ' صفحة، نص مستخرج: ' + st.text + ']'; }).join('\n');
+        updateMessage(loadingId, '📚 المصادر المفعّلة حالياً:\n\n' + list + textlessNote(activeSources), [], shouldAutoSpeak);
         return;
       }
 
-      // تجميع جميع الصفحات وترتيبها بالسرعة القصوى
       let allPages = [];
       activeSources.forEach(src => {
         (src.pages || []).forEach(p => {
-          allPages.push({
-            sourceTitle: src.title,
-            sourceType: src.type,
-            pageNum: p.pageNum,
-            text: p.text || '',
-            image: p.image
-          });
+          allPages.push({ sourceTitle: src.title, sourceType: src.type, pageNum: p.pageNum, text: p.text || '', image: p.image });
         });
       });
 
-      const stopWords = ['ما', 'هي', 'هو', 'عن', 'في', 'من', 'الي', 'كيف', 'هل', 'اذكر', 'اشرح', 'متى', 'اين'];
-      const keywords = qNorm.split(/[\s؟?.,،!]+/).filter(w => w.length > 2 && !stopWords.includes(w));
+      const idx = buildLocalIndex(allPages);
+      const note = textlessNote(activeSources);
+      if (idx.N === 0) {
+        updateMessage(loadingId, '⚠️ المصادر المفعّلة ما فيها أي نص مستخرج (كلها صفحات صور بدون OCR)، فما أقدر أبحث فيها ولا أجاوب منها.\n\nالحل: افتح تبويبة "الملفات" واضغط "📝 استخراج النص OCR" على الكتاب المصور (يحتاج مفتاح محرك وحصة). أو فعّل مصدراً نصياً.' + note, [], false);
+        return;
+      }
 
-      allPages.forEach(p => {
-        let score = 0;
-        const pNorm = normalizeArabic(p.text);
-        keywords.forEach(k => { if (pNorm.includes(k)) score += 3; });
-        if (p.text.trim().length < 20) score += 1;
-        p.score = score;
-      });
+      const summary = isSummaryIntent(query);
+      // تحديد الكتاب المقصود في السؤال (بحسب العنوان) وإلا كل المصادر
+      const qTok = tokenize(query, true);
+      let scoped = activeSources.filter(src => { const tt = new Set(tokenize(src.title, true)); return qTok.filter(w => tt.has(w)).length >= 2; });
+      const bm = bm25Search(idx, query, 8);
 
-      // تحديد محرك الذكاء الاصطناعي المتاح
+      if (answerMode === 'local') {
+        if (summary) {
+          const pool = allPages.filter(p => pageHasText(p) && (!scoped.length || scoped.some(s => s.title === p.sourceTitle)));
+          const pick = sampleEvenly(pool, 5);
+          const body = pick.map(p => '📖 ' + p.sourceTitle + ' | صفحة ' + p.pageNum + '\n' + snippetAround(p.text, [], 300)).join('\n\n');
+          updateMessage(loadingId, '🔎 الوضع المحلي (بدون مفاتيح) ما يقدر يكتب ملخصاً حقيقياً، لأن التلخيص يحتاج نموذج ذكاء. هذي مقاطع موزعة على الكتاب تعطيك فكرة، وللتلخيص الفعلي اختر الوضع "🤖 ذكي".\n\n' + body + note, pick, false);
+          return;
+        }
+        if (!bm.hits.length) { updateMessage(loadingId, '🔍 ما لقيت صفحات فيها كلمات سؤالك. جرّب كلمات ثانية أو أقصر (اسم المكان أو الشخص).' + note, [], false); return; }
+        const top = bm.hits.slice(0, 5);
+        const body = top.map((h, i) => (i + 1) + '. 📖 ' + h.page.sourceTitle + ' | 📄 صفحة ' + h.page.pageNum + '\n' + snippetAround(h.page.text, bm.terms, 380)).join('\n\n');
+        updateMessage(loadingId, '🔎 أقرب المقاطع في مصادرك (بحث محلي بدون مفاتيح، يعرض النص كما هو بدون صياغة):\n\n' + body + note, top.slice(0, 3).map(h => h.page), shouldAutoSpeak);
+        return;
+      }
+
+      // وضع الذكاء الاصطناعي: اختيار الصفحات
+      let topPages;
+      if (summary) {
+        const pool = allPages.filter(p => pageHasText(p) && (!scoped.length || scoped.some(s => s.title === p.sourceTitle)));
+        topPages = sampleEvenly(pool, 8);
+      } else {
+        topPages = bm.hits.map(h => h.page);
+      }
       const chosenEngine = keys[activeEngine] ? activeEngine : ENGINES.find(e => keys[e]);
 
-      // البحث المحلي الفوري إذا لم يضف المستخدم أي مفتاح API
+      if (!topPages.length) {
+        updateMessage(loadingId, '🔍 ما لقيت في الصفحات النصية أي صفحة فيها كلمات سؤالك، فما أرسلته للذكاء الاصطناعي (توفيراً للحصة). جرّب صياغة ثانية بكلمات من الكتاب، أو غيّر الوضع إلى "🔎 محلي".' + note, [], false);
+        return;
+      }
       if (!chosenEngine) {
-        const matches = allPages.filter(p => p.text.trim().length >= 20 && p.score >= 3).sort((a, b) => b.score - a.score);
-        if (matches.length > 0) {
-          const top = matches[0];
-          const reply = '✅ الإجابة المستخرجة:\n📖 المصدر: ' + top.sourceTitle + '\n📄 رقم الصفحة: ' + top.pageNum + '\n\n' + top.text.slice(0, 650) + (top.text.length > 650 ? '...' : '');
-          updateMessage(loadingId, reply, [top], shouldAutoSpeak);
-        } else {
-          updateMessage(loadingId, '🔍 لم أجد تطابقاً نصياً مباشراً. أضف مفتاح API في تبويبة "الإعدادات" لتفعيل الفهم العميق وقراءة الكتب المصورة.', [], false);
-        }
+        const top = bm.hits.slice(0, 5);
+        const body = top.map((h, i) => (i + 1) + '. 📖 ' + h.page.sourceTitle + ' | 📄 صفحة ' + h.page.pageNum + '\n' + snippetAround(h.page.text, bm.terms, 380)).join('\n\n');
+        updateMessage(loadingId, summary ? '⚠️ التلخيص يحتاج مفتاح محرك. أضف مفتاحاً من الإعدادات.' + note : '🔎 ما فيه مفتاح مضاف، هذي أقرب المقاطع (بحث محلي):\n\n' + body + note, top.slice(0, 3).map(h => h.page), false);
         return;
       }
 
@@ -1240,25 +1368,20 @@
         const strictMode = document.getElementById('strictModeToggle').checked;
         const prev = (cur ? cur.msgs : []).filter(m => !m.loading).slice(0, -1).slice(-6);
         const histText = prev.map(m => (m.sender === 'user' ? 'المستخدم: ' : 'باحث: ') + String(m.text).slice(0, 400)).join('\n');
-        const topPages = [...allPages].sort((a, b) => b.score - a.score).slice(0, 8);
 
         let prompt = 'أنت المساعد الذكي "باحث". أجب باللغة العربية بدقة بالاعتماد على الصفحات والمصادر المرفقة.\n' +
-          'قواعد الإجابة:\n' +
+          'الصفحات المرفقة مقتطفات مختارة من الكتب وليست الكتاب كاملاً. إذا طُلب تلخيص فلخّص ما في المقتطفات واذكر صفحاتها.\nقواعد الإجابة:\n' +
           '1. اذكر في إجابتك اسم المصدر (الكتاب/المقالة/الفيديو) ورقم الصفحة بدقة.\n' +
           '2. في نهاية ردك مباشرة، أضف هذا السطر لعرض صورة الصفحة للمستخدم:\n' +
           'REF_PAGE: [اسم_المصدر_بالضبط] | [رقم_الصفحة]\n' +
-          (strictMode ? '3. التزم حصرياً بالمصادر المرفقة. إذا لم تجد الإجابة، قل: "عذراً، هذه المعلومة غير متوفرة في المصادر المفعلة حالياً."\n' : '') +
+          (strictMode ? '3. التزم حصرياً بالمصادر المرفقة. إذا لم تجد الإجابة في الصفحات المرفقة، قل: "عذراً، هذه المعلومة غير متوفرة في المصادر المفعلة حالياً."\n' : '') +
           (histText ? '\nسياق الدردشة السابقة:\n' + histText + '\n' : '') +
           '\nسؤال المستخدم: ' + query + '\n\n--- محتوى المصادر ---\n';
 
         let imagesToSend = [];
         topPages.forEach(p => {
           prompt += '\n[المصدر: ' + p.sourceTitle + ' | صفحة: ' + p.pageNum + ']\n';
-          if (p.text && p.text.trim().length > 20) {
-            prompt += p.text.slice(0, 1800) + '\n';
-          } else if (p.image) {
-            imagesToSend.push(p.image);
-          }
+          prompt += p.text.slice(0, 1800) + '\n';
         });
 
         let aiResult;
@@ -1269,7 +1392,9 @@
           const msg = isQuotaError(aiErr)
             ? '⏳ انتهت الحصة المجانية اليومية لمحرك الذكاء الاصطناعي (الباقة المجانية لـ Gemini تعطي نحو 20 طلباً في اليوم، واستيراد الكتب المصورة يستهلك منها).\n\nالحلول:\n1. أضف مفتاح محرك آخر من تبويبة "الإعدادات" (مثل Grok أو Mistral أو ChatGPT) وسيتحول التطبيق إليه تلقائياً عند امتلاء حصة Gemini.\n2. أو أعد المحاولة بعد تجدد الحصة (عادة خلال 24 ساعة).'
             : '⚠️ تعذر الوصول لمحركات الذكاء الاصطناعي: ' + ((aiErr && aiErr.message) || aiErr) + '\nافتح الإعدادات واضغط "🔍 فحص المفاتيح" لمعرفة أي مفتاح فيه مشكلة، وتأكد من الإنترنت.';
-          updateMessage(loadingId, msg, [], false);
+          const fb = bm.hits.slice(0, 4);
+          const fbBody = fb.length && !summary ? '\n\n🔎 وهذي أقرب المقاطع من مصادرك محلياً:\n\n' + fb.map((h, i) => (i + 1) + '. 📖 ' + h.page.sourceTitle + ' | 📄 صفحة ' + h.page.pageNum + '\n' + snippetAround(h.page.text, bm.terms, 320)).join('\n\n') : '';
+          updateMessage(loadingId, msg + fbBody, fb.slice(0, 3).map(h => h.page), false);
           return;
         }
         let rawReply = aiResult.text;
@@ -1288,7 +1413,7 @@
         }
         rawReply = rawReply.replace(refRegex, '').trim();
 
-        if (citedPages.length === 0 && !rawReply.includes('غير متوفرة')) {
+        if (citedPages.length === 0 && !rawReply.includes('غير متوفرة') && !rawReply.includes('غير متوفره')) {
           const fallbackPage = topPages.find(p => rawReply.includes(p.sourceTitle));
           if (fallbackPage) citedPages.push(fallbackPage);
         }
