@@ -993,6 +993,31 @@
       const m = ((err && err.message) || '').toLowerCase();
       return m.includes('per day') || m.includes('daily') || m.includes('billing') || m.includes('insufficient');
     }
+    const keyNotified = {};
+    function notifyKeyProblem(engine, pos, total, kind, key) {
+      const id = engine + '|' + key + '|' + kind;
+      if (keyNotified[id] && Date.now() - keyNotified[id] < 600000) return;
+      keyNotified[id] = Date.now();
+      const name = ENGINE_NAMES[engine] || engine;
+      const msg = kind === 'bad'
+        ? '⚠️ ' + name + ': المفتاح ' + pos + (total > 1 ? ' من ' + total : '') + ' فيه مشكلة (غير صالح أو مرفوض). بدّله من الإعدادات.'
+        : '⏳ ' + name + ': المفتاح ' + pos + (total > 1 ? ' من ' + total : '') + ' خلصت حصته. ' + (total > 1 ? 'انتقلت للمفتاح التالي تلقائياً.' : 'أضف مفتاحاً آخر أو انتظر تجدد الحصة.');
+      try {
+        let box = document.getElementById('keyToasts');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'keyToasts';
+          box.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top) + 8px);left:8px;right:8px;z-index:99999;display:flex;flex-direction:column;gap:6px;pointer-events:none';
+          document.body.appendChild(box);
+        }
+        const t = document.createElement('div');
+        t.textContent = msg;
+        t.style.cssText = 'pointer-events:auto;background:' + (kind === 'bad' ? '#7f1d1d' : '#78350f') + ';color:#fff;border:1px solid #fbbf24;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:700;text-align:right;direction:rtl';
+        t.onclick = () => t.remove();
+        box.appendChild(t);
+        setTimeout(() => t.remove(), 15000);
+      } catch (_) {}
+    }
     async function callUnifiedAI(engine, promptText, imageDataUrls = []) {
       const list = keyList(engine);
       if (!list.length) throw new Error('مفتاح ' + engine + ' غير مضاف في الإعدادات');
@@ -1013,6 +1038,7 @@
           const bad = /api key|invalid|unauthorized|permission|401|403|incorrect/i.test((err && err.message) || '');
           if (quota || bad) {
             keyCooldown[list[i]] = Date.now() + (bad ? 3600000 : (isDailyQuota(err) ? 3600000 : 60000));
+            notifyKeyProblem(engine, i + 1, list.length, bad ? 'bad' : 'quota', list[i]);
             keyCursor[engine] = (i + 1) % list.length;
             continue; // جرّب المفتاح التالي
           }
