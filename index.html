@@ -202,37 +202,37 @@
 
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
       <p class="text-xs text-slate-300 leading-relaxed">
-        أدخل مفتاح API للمحرك الذي تفضله (يُحفظ محلياً على جهازك فقط):
+        أدخل مفتاح API للمحرك الذي تفضله. تقدر تضيف أكثر من مفتاح للمحرك الواحد (كل مفتاح بسطر)، وينتقل التطبيق بينها تلقائياً إذا خلصت حصة مفتاح. المفاتيح تُحفظ محلياً على جهازك فقط:
       </p>
 
       <div class="space-y-1">
         <label class="text-[11px] font-bold text-emerald-400">1. Gemini API Key (Google)</label>
-        <input type="password" id="key-gemini" placeholder="AIzaSy..." dir="ltr" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+        <textarea rows="2" id="key-gemini" placeholder="AIzaSy..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
       <div class="space-y-1">
         <label class="text-[11px] font-bold text-sky-400">2. ChatGPT API Key (OpenAI)</label>
-        <input type="password" id="key-openai" placeholder="sk-..." dir="ltr" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+        <textarea rows="2" id="key-openai" placeholder="sk-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
       <div class="space-y-1">
         <label class="text-[11px] font-bold text-amber-400">3. Claude API Key (Anthropic)</label>
-        <input type="password" id="key-claude" placeholder="sk-ant-..." dir="ltr" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+        <textarea rows="2" id="key-claude" placeholder="sk-ant-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
       <div class="space-y-1">
         <label class="text-[11px] font-bold text-purple-400">4. Mistral API Key (Mistral AI)</label>
-        <input type="password" id="key-mistral" placeholder="..." dir="ltr" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+        <textarea rows="2" id="key-mistral" placeholder="..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
       <div class="space-y-1">
         <label class="text-[11px] font-bold text-slate-200">5. Grok API Key (xAI)</label>
-        <input type="password" id="key-grok" placeholder="xai-..." dir="ltr" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+        <textarea rows="2" id="key-grok" placeholder="xai-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
       <div class="space-y-1">
         <label class="text-[11px] font-bold text-cyan-400">6. DeepSeek OCR / Chat API Key</label>
-        <input type="password" id="key-deepseek" placeholder="sk-..." dir="ltr" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+        <textarea rows="2" id="key-deepseek" placeholder="sk-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
       <button type="button" onclick="saveAllSettings()" class="w-full py-2.5 rounded-xl bg-emerald-600 active:bg-emerald-500 font-bold text-xs text-white transition">
@@ -447,14 +447,15 @@
       localStorage.setItem('baheth_ocr_engine', val);
     }
 
+    function keyListFromText(t) { return Array.from(new Set(String(t || '').split(/[\s,،;؛]+/).map(k => k.trim()).filter(Boolean))); }
     function saveAllSettings() {
       ENGINES.forEach(e => {
-        const val = document.getElementById('key-' + e).value.trim();
+        const val = keyListFromText(document.getElementById('key-' + e).value).join('\n');
         keys[e] = val;
         localStorage.setItem('baheth_key_' + e, val);
       });
       saveToggles();
-      alert('✅ تم حفظ مفاتيح الذكاء الاصطناعي بنجاح');
+      { const c = ENGINES.map(e => keyList(e).length ? (ENGINE_NAMES[e] + ': ' + keyList(e).length) : '').filter(Boolean).join('، '); alert('✅ تم حفظ المفاتيح' + (c ? ' (' + c + ')' : '')); }
       switchTab('chat');
     }
 
@@ -982,9 +983,47 @@
       return r.text.split(/===\s*PAGE\s*===/).map(s => s.trim());
     }
 
+    // عدة مفاتيح لكل محرك: تُفصل بسطر جديد أو فاصلة أو مسافة
+    function keyList(engine) {
+      return Array.from(new Set(String(keys[engine] || '').split(/[\s,،;؛]+/).map(k => k.trim()).filter(Boolean)));
+    }
+    const keyCooldown = {}; // المفتاح -> وقت انتهاء الإيقاف المؤقت
+    const keyCursor = {};   // آخر مفتاح نجح لكل محرك
+    function isDailyQuota(err) {
+      const m = ((err && err.message) || '').toLowerCase();
+      return m.includes('per day') || m.includes('daily') || m.includes('billing') || m.includes('insufficient');
+    }
     async function callUnifiedAI(engine, promptText, imageDataUrls = []) {
-      const key = keys[engine];
-      if (!key) throw new Error('مفتاح ' + engine + ' غير مضاف في الإعدادات');
+      const list = keyList(engine);
+      if (!list.length) throw new Error('مفتاح ' + engine + ' غير مضاف في الإعدادات');
+      const start = (keyCursor[engine] || 0) % list.length;
+      let order = list.map((_, i) => (start + i) % list.length);
+      const now = Date.now();
+      const ready = order.filter(i => !(keyCooldown[list[i]] > now));
+      if (ready.length) order = ready; // إذا كلها موقوفة نجرّبها كلها مرة أخرى
+      let lastErr = null;
+      for (const i of order) {
+        try {
+          const t = await callOneKey(engine, list[i], promptText, imageDataUrls);
+          keyCursor[engine] = i;
+          return t;
+        } catch (err) {
+          lastErr = err;
+          const quota = isQuotaError(err);
+          const bad = /api key|invalid|unauthorized|permission|401|403|incorrect/i.test((err && err.message) || '');
+          if (quota || bad) {
+            keyCooldown[list[i]] = Date.now() + (bad ? 3600000 : (isDailyQuota(err) ? 3600000 : 60000));
+            keyCursor[engine] = (i + 1) % list.length;
+            continue; // جرّب المفتاح التالي
+          }
+          throw err; // خطأ آخر: لا فائدة من تبديل المفتاح
+        }
+      }
+      if (lastErr && list.length > 1) lastErr.message = 'كل مفاتيح ' + (ENGINE_NAMES[engine] || engine) + ' (' + list.length + ') خلصت حصتها أو غير صالحة. ' + lastErr.message;
+      throw lastErr;
+    }
+
+    async function callOneKey(engine, key, promptText, imageDataUrls = []) {
 
       // 1. Google Gemini
       if (engine === 'gemini') {
