@@ -142,7 +142,8 @@
       <div class="flex items-center justify-between gap-2">
         <span class="text-[11px] text-slate-300 font-bold">محرك تحويل الكتب / OCR:</span>
         <select id="ocrEngineSelect" onchange="saveOcrEngine(this.value)" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-emerald-400 font-bold focus:outline-none">
-          <option value="gemini">Gemini Vision OCR (افتراضي)</option>
+          <option value="auto">تلقائي: نفس محرك الدردشة (افتراضي)</option>
+          <option value="gemini">Gemini Vision OCR</option>
           <option value="deepseek">DeepSeek OCR API</option>
           <option value="openai">ChatGPT Vision OCR</option>
           <option value="claude">Claude Vision OCR</option>
@@ -238,6 +239,7 @@
         <textarea rows="2" id="key-deepseek" placeholder="sk-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
+      <button type="button" onclick="showDiagnostics()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-emerald-300 transition mb-2">📊 تشخيص المحركات (الطلبات والأخطاء ومن خدم كل مهمة)</button>
       <button type="button" onclick="testAllKeys()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-sky-300 transition">
         🔍 فحص المفاتيح (احفظ أولاً)
       </button>
@@ -451,12 +453,16 @@
     });
 
     let activeEngine = localStorage.getItem('baheth_active_engine') || 'gemini';
-    let ocrEngine = localStorage.getItem('baheth_ocr_engine') || 'gemini';
+    let ocrEngine = localStorage.getItem('baheth_ocr_engine2') || 'auto';
     document.getElementById('activeEngineSelect').value = activeEngine;
     document.getElementById('ocrEngineSelect').value = ocrEngine;
     document.getElementById('autoSpeakToggle').checked = localStorage.getItem('baheth_autospeak') !== 'false';
     document.getElementById('strictModeToggle').checked = localStorage.getItem('baheth_strict') !== 'false';
 
+    function prefEngine(task) {
+      const p = (task === 'ocr' && ocrEngine !== 'auto') ? ocrEngine : activeEngine;
+      return keys[p] ? p : ENGINES.find(e => keys[e]);
+    }
     function changeActiveEngine(val) {
       activeEngine = val;
       localStorage.setItem('baheth_active_engine', val);
@@ -464,7 +470,7 @@
 
     function saveOcrEngine(val) {
       ocrEngine = val;
-      localStorage.setItem('baheth_ocr_engine', val);
+      localStorage.setItem('baheth_ocr_engine2', val);
     }
 
     function cleanKey(k) { return String(k || '').replace(/[^\x21-\x7E]/g, '').replace(/^["'`]+|["'`]+$/g, ''); }
@@ -755,9 +761,9 @@
           } else if (file.type.startsWith('image/')) {
             const imgData = await compressImageFile(file);
             let extracted = '';
-            if (keys[ocrEngine]) {
+            if (ENGINES.some(e => keys[e])) {
               showProgress('استخراج النص بالـ OCR: ' + file.name + fileLabel, 50);
-              try { extracted = await runOcrOnImage(imgData, ocrEngine); } catch (_) {}
+              try { extracted = await runOcrOnImage(imgData, prefEngine('ocr')); } catch (_) {}
             }
             const newSrc = { id: 'src-' + Date.now() + Math.random().toString(36).slice(2, 6), title: file.name, type: 'صورة كتاب', active: true, complete: true, pages: [{ pageNum: 1, text: extracted, image: imgData }] };
             await dbPut(newSrc);
@@ -881,21 +887,21 @@
           const group = ocrPages.slice(g, g + groupSize);
           showProgress('استخراج نص الصفحات المصورة OCR: ' + file.name + fileLabel + ' (' + Math.min(g + groupSize, ocrPages.length) + '/' + ocrPages.length + ')', 95);
           try {
-            const parts = await runOcrOnPages(group.map(p => p.image), ocrEngine);
+            const parts = await runOcrOnPages(group.map(p => p.image), prefEngine('ocr'));
             if (parts.length === group.length) {
               group.forEach((p, i) => { p.text = parts[i] || ''; });
             } else {
               // إذا لم يطابق التقسيم عدد الصفحات، نعالج هذه الدفعة صفحة صفحة
               for (const p of group) {
-                try { p.text = await runOcrOnImage(p.image, ocrEngine); }
-                catch (e2) { if (isQuotaError(e2)) { ocrStopped = true; break; } }
+                try { p.text = await runOcrOnImage(p.image, prefEngine('ocr')); }
+                catch (e2) { if (stopErr(e2)) { ocrStopped = true; break; } }
               }
             }
             consecutiveFail = 0;
             if (group.some(p => p.text && p.text.length > 20)) hasText = true;
           } catch (err) {
             consecutiveFail++;
-            if (isQuotaError(err) || consecutiveFail >= 2) ocrStopped = true;
+            if (stopErr(err) || consecutiveFail >= 2) ocrStopped = true;
           }
           await dbPut(src);
         }
@@ -1079,7 +1085,7 @@
       const src = sources.find(s => s.id === currentTranslateSourceId);
       if (!src) return;
       const targetLang = document.getElementById('targetLangSelect').value;
-      const engine = keys[activeEngine] ? activeEngine : ENGINES.find(e => keys[e]);
+      const engine = prefEngine('translate');
       const outEl = document.getElementById('translationOutput');
       if (!engine) { outEl.textContent = '⚠️ يرجى إضافة مفتاح API واحد على الأقل في تبويبة "الإعدادات" لتشغيل الترجمة الذكية.'; return; }
       const existing = sources.find(s => s.translating && s.parentId === src.id && s.trLang === targetLang);
@@ -1103,7 +1109,7 @@
       if (!tsrc || trJobs[id]) return;
       const parent = sources.find(s => s.id === tsrc.parentId);
       if (!parent) { alert('المصدر الأصلي محذوف، ما أقدر أكمل الترجمة.'); return; }
-      const engine = keys[activeEngine] ? activeEngine : ENGINES.find(e => keys[e]);
+      const engine = prefEngine('translate');
       if (!engine) { alert('أضف مفتاح محرك في الإعدادات أولاً.'); return; }
       const job = { paused: false, cancel: false }; trJobs[id] = job;
       delete tsrc.trError;
@@ -1127,13 +1133,13 @@
           }
           let text = null, lastErr = null;
           for (let attempt = 0; attempt < 3 && text === null; attempt++) {
-            try { const r = await callAIWithFallback(engine, prompt, images); text = r.text; }
-            catch (e) { lastErr = e; if (isQuotaError(e)) break; await new Promise(r => setTimeout(r, 1500)); }
+            try { const r = await callAIWithFallback(engine, prompt, images, 'translate'); text = r.text; }
+            catch (e) { lastErr = e; if (stopErr(e)) break; await new Promise(r => setTimeout(r, 1500)); }
           }
           if (job.cancel) return;
           if (text === null) {
             ok = false;
-            tsrc.trError = isQuotaError(lastErr) ? 'انتهت الحصة، اضغط ▶ لاحقاً للمتابعة' : ((lastErr && lastErr.message) || 'فشل الاتصال') + ' (اضغط ▶ للمتابعة)';
+            tsrc.trError = stopErr(lastErr) ? 'انتهت الحصة، اضغط ▶ لاحقاً للمتابعة' : ((lastErr && lastErr.message) || 'فشل الاتصال') + ' (اضغط ▶ للمتابعة)';
             await dbPut(tsrc);
             notify('⏸ توقفت الترجمة', tsrc.trChunks.length + '/' + plan.length + ' جزء. ' + tsrc.trError);
             return;
@@ -1167,7 +1173,7 @@
     // ==================== بوابة الذكاء الاصطناعي الموحدة (6 محركات + OCR) ====================
     async function runOcrOnImage(imageDataUrl, engine) {
       const prompt = 'استخرج كافة النصوص المكتوبة في صورة صفحة الكتاب هذه بدقة تامة وبدون أي إضافة أو شرح:';
-      const r = await callAIWithFallback(engine, prompt, [imageDataUrl]);
+      const r = await callAIWithFallback(engine, prompt, [imageDataUrl], 'ocr');
       return r.text;
     }
 
@@ -1178,31 +1184,79 @@
       return m.includes('quota') || m.includes('429') || m.includes('rate limit') || m.includes('resource has been exhausted') || m.includes('exceeded') || m.includes('too many requests');
     }
 
-    // يحاول المحرك المفضل ثم بقية المحركات المضافة تلقائياً عند فشلها
-    async function callAIWithFallback(preferredEngine, promptText, imageDataUrls = []) {
+    // ===== التشخيص: عدد الطلبات وآخر خطأ ومن خدم كل مهمة =====
+    let diag = { engines: {}, log: [] };
+    try { diag = JSON.parse(localStorage.getItem('baheth_diag') || '') || diag; } catch (_) {}
+    if (!diag.engines) diag.engines = {}; if (!diag.log) diag.log = [];
+    function saveDiag() { try { localStorage.setItem('baheth_diag', JSON.stringify(diag)); } catch (_) {} }
+    function diagEng(e) { return diag.engines[e] || (diag.engines[e] = { req: 0, ok: 0, fail: 0, lastErr: '', lastErrAt: 0, lastOkAt: 0 }); }
+    const TASK_NAMES = { chat: 'دردشة', ocr: 'استخراج نص OCR', translate: 'ترجمة' };
+    function stopErr(err) { return err && err.failedEngines ? !!err.allQuota : isQuotaError(err); }
+    function engineCooled(e) { const l = keyList(e); const n = Date.now(); return l.length > 0 && l.every(k => keyCooldown[k] > n); }
+
+    // يحاول المحرك المفضل ثم كل المحركات التي لها مفاتيح (المتاحة أولاً) تلقائياً
+    async function callAIWithFallback(preferredEngine, promptText, imageDataUrls = [], task = 'chat') {
       let order = [preferredEngine, ...ENGINES.filter(e => e !== preferredEngine)].filter(e => e && keys[e]);
       if (imageDataUrls.length) order = order.filter(e => e !== 'deepseek'); // DeepSeek لا يستقبل صوراً هنا
+      order = [...order.filter(e => !engineCooled(e)), ...order.filter(e => engineCooled(e))];
       if (!order.length) throw new Error('لا يوجد محرك مضاف يدعم هذا الطلب. أضف مفتاح API في الإعدادات.');
-      let lastErr = null;
-      const failed = [];
+      const failed = [], errs = [];
+      let allQuota = true;
       for (const eng of order) {
         try {
           const text = await callUnifiedAI(eng, promptText, imageDataUrls);
-          if (text && text.trim()) return { text, engine: eng, failed };
+          if (text && text.trim()) {
+            diag.log.unshift({ t: Date.now(), task, pref: preferredEngine, served: eng, failed: errs.slice() });
+            diag.log.length = Math.min(diag.log.length, 40); saveDiag();
+            return { text, engine: eng, failed };
+          }
+          errs.push({ e: eng, m: 'رد فارغ' }); failed.push(eng); allQuota = false;
+          const d = diagEng(eng); d.fail++; d.lastErr = 'رد فارغ'; d.lastErrAt = Date.now();
         } catch (err) {
-          lastErr = err;
-          failed.push(eng);
+          const m = ((err && err.message) || String(err)).slice(0, 200);
+          errs.push({ e: eng, m }); failed.push(eng);
+          if (!isQuotaError(err)) allQuota = false;
         }
       }
-      const err = lastErr || new Error('فشلت كل محركات الذكاء الاصطناعي المضافة');
-      err.failedEngines = failed;
+      diag.log.unshift({ t: Date.now(), task, pref: preferredEngine, served: null, failed: errs.slice() });
+      diag.log.length = Math.min(diag.log.length, 40); saveDiag();
+      const err = new Error('فشلت كل المحركات (' + errs.map(x => (ENGINE_NAMES[x.e] || x.e) + ': ' + x.m.slice(0, 90)).join(' | ') + ')');
+      err.failedEngines = failed; err.allQuota = allQuota;
       throw err;
+    }
+
+    function showDiagnostics() {
+      let ov = document.getElementById('diagOverlay'); if (ov) ov.remove();
+      ov = document.createElement('div'); ov.id = 'diagOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(2,6,23,.96);overflow:auto;padding:calc(env(safe-area-inset-top) + 12px) 12px 24px;direction:rtl;color:#e2e8f0;font-size:12px';
+      const fmt = t => t ? new Date(t).toLocaleString('ar', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) : '-';
+      const esc = x => String(x == null ? '' : x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📊 تشخيص المحركات</b><button onclick="document.getElementById(\'diagOverlay\').remove()" style="background:#334155;border-radius:10px;padding:6px 14px;color:#fff;font-weight:700">إغلاق</button></div>';
+      h += '<div style="margin-bottom:10px;color:#94a3b8">محرك الدردشة والترجمة: <b style="color:#6ee7b7">' + esc(ENGINE_NAMES[activeEngine] || activeEngine) + '</b> | محرك OCR: <b style="color:#6ee7b7">' + (ocrEngine === 'auto' ? 'تلقائي (نفس محرك الدردشة)' : esc(ENGINE_NAMES[ocrEngine] || ocrEngine)) + '</b><br>إذا فشل المحرك المفضل ينتقل التطبيق تلقائياً لكل محرك له مفتاح.</div>';
+      ENGINES.forEach(e => {
+        const n = keyList(e).length, d = diag.engines[e] || { req: 0, ok: 0, fail: 0 };
+        if (!n && !d.req) return;
+        const cool = n && engineCooled(e);
+        h += '<div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:10px;margin-bottom:8px"><b>' + esc(ENGINE_NAMES[e]) + '</b> - مفاتيح: ' + n + (cool ? ' <span style="color:#fbbf24">(موقوف مؤقتاً)</span>' : '') +
+          '<br>طلبات: ' + (d.req || 0) + ' | نجح: ' + (d.ok || 0) + ' | فشل: ' + (d.fail || 0) + '<br>آخر نجاح: ' + fmt(d.lastOkAt) +
+          (d.lastErr ? '<br><span style="color:#fca5a5">آخر خطأ (' + fmt(d.lastErrAt) + '): ' + esc(d.lastErr) + '</span>' : '') + '</div>';
+      });
+      if (!ENGINES.some(e => keyList(e).length)) h += '<div>ما فيه مفاتيح مضافة.</div>';
+      h += '<b style="display:block;margin:12px 0 6px">آخر المهام (أي محرك خدمها)</b>';
+      if (!diag.log.length) h += '<div style="color:#94a3b8">لا توجد مهام مسجلة بعد.</div>';
+      diag.log.slice(0, 25).forEach(l => {
+        h += '<div style="border-bottom:1px solid #1e293b;padding:6px 0">' + fmt(l.t) + ' - ' + esc(TASK_NAMES[l.task] || l.task) + ': ' +
+          (l.served ? '✅ خدمها <b>' + esc(ENGINE_NAMES[l.served] || l.served) + '</b>' + (l.pref && l.pref !== l.served ? ' (المفضل ' + esc(ENGINE_NAMES[l.pref] || l.pref) + ')' : '') : '❌ فشلت') +
+          (l.failed && l.failed.length ? '<div style="color:#fca5a5;font-size:11px">' + l.failed.map(x => esc(ENGINE_NAMES[x.e] || x.e) + ': ' + esc(String(x.m).slice(0, 110))).join('<br>') + '</div>' : '') + '</div>';
+      });
+      h += '<button onclick="if(confirm(\'مسح سجل التشخيص؟\')){diag={engines:{},log:[]};saveDiag();showDiagnostics();}" style="margin-top:14px;background:#7f1d1d;border-radius:10px;padding:8px 14px;color:#fff;font-weight:700">مسح السجل</button>';
+      ov.innerHTML = h; document.body.appendChild(ov);
     }
 
     // OCR على دفعات: حتى 4 صفحات في الطلب الواحد لتقليل استهلاك الحصة المجانية
     async function runOcrOnPages(imageDataUrls, engine) {
       const prompt = 'هذه ' + imageDataUrls.length + ' صور لصفحات متتالية من كتاب. استخرج النص المكتوب في كل صفحة بدقة تامة، وافصل نص كل صفحة عن التي تليها بسطر يحتوي فقط على:\n===PAGE===\nأخرج النصوص بنفس ترتيب الصور وبدون أي شرح أو إضافة.';
-      const r = await callAIWithFallback(engine, prompt, imageDataUrls);
+      const r = await callAIWithFallback(engine, prompt, imageDataUrls, 'ocr');
       return r.text.split(/===\s*PAGE\s*===/).map(s => s.trim());
     }
 
@@ -1252,7 +1306,12 @@
       let lastErr = null;
       for (const i of order) {
         try {
-          const t = await callOneKey(engine, list[i], promptText, imageDataUrls);
+          const dg = diagEng(engine); dg.req++;
+          let t;
+          try { t = await callOneKey(engine, list[i], promptText, imageDataUrls); }
+          catch (e0) { dg.fail++; dg.lastErr = (((e0 && e0.message) || String(e0)) + '').slice(0, 220) + (list.length > 1 ? ' (مفتاح ' + (i + 1) + ')' : ''); dg.lastErrAt = Date.now(); saveDiag(); throw e0; }
+          if (t && t.trim()) { dg.ok++; dg.lastOkAt = Date.now(); } else { dg.fail++; dg.lastErr = 'رد فارغ'; dg.lastErrAt = Date.now(); }
+          saveDiag();
           keyCursor[engine] = i;
           return t;
         } catch (err) {
@@ -1280,6 +1339,16 @@
       finally { clearTimeout(t); }
     }
 
+    async function apiJson(res) {
+      const raw = await res.text();
+      let data = null;
+      try { data = JSON.parse(raw); } catch (_) {}
+      if (!data) throw new Error('HTTP ' + res.status + ': ' + raw.slice(0, 160));
+      const em = (data.error && (data.error.message || (typeof data.error === 'string' ? data.error : ''))) || data.message || (data.object === 'error' ? JSON.stringify(data).slice(0, 200) : '') || (data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail).slice(0, 200)) : '');
+      if (!res.ok || data.error || data.object === 'error') throw new Error('HTTP ' + res.status + ': ' + (em || raw.slice(0, 160)));
+      return data;
+    }
+
     async function callOneKey(engine, key, promptText, imageDataUrls = []) {
 
       // 1. Google Gemini
@@ -1294,8 +1363,7 @@
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
           body: JSON.stringify({ contents: [{ parts }] })
         });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
+        const data = await apiJson(res);
         return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       }
 
@@ -1303,7 +1371,7 @@
       if (['openai', 'mistral', 'grok', 'deepseek'].includes(engine)) {
         const endpoints = {
           openai: { url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
-          mistral: { url: 'https://api.mistral.ai/v1/chat/completions', model: imageDataUrls.length ? 'pixtral-12b-2409' : 'mistral-small-latest' },
+          mistral: { url: 'https://api.mistral.ai/v1/chat/completions', model: 'mistral-small-latest' },
           grok: { url: 'https://api.x.ai/v1/chat/completions', model: imageDataUrls.length ? 'grok-2-vision-1212' : 'grok-2-latest' },
           deepseek: { url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' }
         };
@@ -1311,15 +1379,14 @@
         let contentPayload = promptText;
         if (imageDataUrls.length > 0 && engine !== 'deepseek') {
           contentPayload = [{ type: 'text', text: promptText }];
-          imageDataUrls.forEach(img => contentPayload.push({ type: 'image_url', image_url: { url: img } }));
+          imageDataUrls.forEach(img => contentPayload.push({ type: 'image_url', image_url: (engine === 'mistral' ? img : { url: img }) }));
         }
         const res = await fetchT(cfg.url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
           body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: contentPayload }] })
         });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
+        const data = await apiJson(res);
         return data?.choices?.[0]?.message?.content || '';
       }
 
@@ -1341,8 +1408,7 @@
           },
           body: JSON.stringify({ model: 'claude-3-5-sonnet-latest', max_tokens: 2048, messages: [{ role: 'user', content: contentArr }] })
         });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
+        const data = await apiJson(res);
         return data?.content?.[0]?.text || '';
       }
     }
@@ -1436,6 +1502,13 @@
     }
     function modelAnswerNote() { return ''; }
 
+    async function withQuotaRetry(fn) {
+      for (let a = 0; ; a++) {
+        try { return await fn(); }
+        catch (e) { if (a < 2 && e && e.allQuota) { await new Promise(r => setTimeout(r, 20000)); continue; } throw e; }
+      }
+    }
+
     async function ocrSource(id) {
       try { await ocrSourceInner(id); }
       catch (e) { delete liveJobs[id]; renderSources(); hideProgress(); notify('❌ خطأ في استخراج النص', (e && e.message) || String(e)); alert('❌ خطأ في استخراج النص: ' + ((e && e.message) || e)); }
@@ -1456,11 +1529,11 @@
         const group = todo.slice(g, g + groupSize);
         showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')', Math.round(g / todo.length * 100));
         try {
-          const parts = await runOcrOnPages(group.map(p => p.image), ocrEngine);
+          const parts = await withQuotaRetry(() => runOcrOnPages(group.map(p => p.image), prefEngine('ocr')));
           if (parts.length === group.length) group.forEach((p, i) => { p.text = parts[i] || ''; });
-          else for (const p of group) { try { p.text = await runOcrOnImage(p.image, ocrEngine); } catch (e2) { lastErr = (e2 && e2.message) || String(e2); if (isQuotaError(e2)) { stopped = true; break; } } }
+          else for (const p of group) { try { p.text = await runOcrOnImage(p.image, prefEngine('ocr')); } catch (e2) { lastErr = (e2 && e2.message) || String(e2); if (stopErr(e2)) { stopped = true; break; } } }
           fails = 0;
-        } catch (err) { fails++; lastErr = (err && err.message) || String(err); if (isQuotaError(err) || fails >= 2) stopped = true; }
+        } catch (err) { fails++; lastErr = (err && err.message) || String(err); if (stopErr(err) || fails >= 2) stopped = true; }
         await dbPut(src); renderSources();
       }
       hideProgress();
@@ -1544,7 +1617,7 @@
       } else {
         topPages = bm.hits.map(h => h.page);
       }
-      const chosenEngine = keys[activeEngine] ? activeEngine : ENGINES.find(e => keys[e]);
+      const chosenEngine = prefEngine('chat');
 
       if (!topPages.length) {
         updateMessage(loadingId, '🔍 ما لقيت في الصفحات النصية أي صفحة فيها كلمات سؤالك، فما أرسلته للذكاء الاصطناعي (توفيراً للحصة). جرّب صياغة ثانية بكلمات من الكتاب، أو غيّر الوضع إلى "🔎 محلي".' + note, [], false);
@@ -1580,9 +1653,9 @@
         let aiResult;
         { const b = document.querySelector('#' + loadingId + ' .msg-body'); if (b) b.textContent = '⚡ جاري سؤال ' + (ENGINE_NAMES[chosenEngine] || chosenEngine) + '...'; }
         try {
-          aiResult = await callAIWithFallback(chosenEngine, prompt, imagesToSend.slice(0, 3));
+          aiResult = await callAIWithFallback(chosenEngine, prompt, imagesToSend.slice(0, 3), 'chat');
         } catch (aiErr) {
-          const msg = isQuotaError(aiErr)
+          const msg = stopErr(aiErr)
             ? '⏳ انتهت الحصة المجانية اليومية لمحرك الذكاء الاصطناعي (الباقة المجانية لـ Gemini تعطي نحو 20 طلباً في اليوم، واستيراد الكتب المصورة يستهلك منها).\n\nالحلول:\n1. أضف مفتاح محرك آخر من تبويبة "الإعدادات" (مثل Grok أو Mistral أو ChatGPT) وسيتحول التطبيق إليه تلقائياً عند امتلاء حصة Gemini.\n2. أو أعد المحاولة بعد تجدد الحصة (عادة خلال 24 ساعة).'
             : '⚠️ تعذر الوصول لمحركات الذكاء الاصطناعي: ' + ((aiErr && aiErr.message) || aiErr) + '\nافتح الإعدادات واضغط "🔍 فحص المفاتيح" لمعرفة أي مفتاح فيه مشكلة، وتأكد من الإنترنت.';
           const fb = bm.hits.slice(0, 4);
