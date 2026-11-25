@@ -312,7 +312,7 @@
       </div>
 
       <div id="translationOutput" class="flex-1 overflow-y-auto smooth-scroll bg-slate-950 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 leading-relaxed whitespace-pre-line min-h-[160px] select-text">
-        اختر اللغة واضغط "ترجم الآن" لترجمة محتوى المصدر بدقة عالية، ويمكنك حفظ الترجمة كمصدر جديد في مكتبتك.
+        اختر اللغة واضغط "ترجم الآن" لترجمة محتوى المصدر بدقة عالية، وتشتغل الترجمة بالخلفية على أجزاء، وتنحفظ تلقائياً كملف txt تحت الأصل.
       </div>
 
       <div class="flex gap-2 pt-1">
@@ -530,10 +530,35 @@
       activeBtn.className = 'sub-tab-btn bg-emerald-600/20 border border-emerald-500/60 text-emerald-300 rounded-xl py-2 px-1 text-[11px] font-bold flex flex-col items-center gap-0.5';
     }
 
-    // ==================== عرض قائمة المصادر مع زر الترجمة ====================
+    // ==================== عرض قائمة المصادر (محملة / قيد التنزيل) ====================
+    const liveJobs = {};
+    const trJobs = {};
+    let pendingResumeId = null;
+    const ctlGate = async (ctl) => { while (ctl.paused && !ctl.cancel) await new Promise(r => setTimeout(r, 400)); return !!ctl.cancel; };
+
+    function notify(title, body) {
+      try {
+        let t = document.getElementById('toastBox');
+        if (!t) {
+          t = document.createElement('div'); t.id = 'toastBox';
+          t.style.cssText = 'position:fixed;top:14px;left:12px;right:12px;z-index:9999;display:flex;flex-direction:column;gap:6px;pointer-events:none';
+          document.body.appendChild(t);
+        }
+        const d = document.createElement('div');
+        d.style.cssText = 'background:#064e3b;border:1px solid #10b981;color:#ecfdf5;border-radius:14px;padding:10px 12px;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.5)';
+        d.innerHTML = '<b>' + escapeHtml(title) + '</b><div style="opacity:.85;margin-top:2px">' + escapeHtml(body || '') + '</div>';
+        t.appendChild(d);
+        setTimeout(() => d.remove(), 8000);
+      } catch (_) {}
+      try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body: body || '' }); } catch (_) {}
+      try { if (navigator.vibrate) navigator.vibrate(200); } catch (_) {}
+    }
+
+    function isInProgress(src) { return src.complete === false || !!src.translating || (liveJobs[src.id] && liveJobs[src.id].kind === 'ocr'); }
+
     function renderSources() {
       const list = document.getElementById('booksList');
-      const activeList = sources.filter(s => s.active);
+      const activeList = sources.filter(s => s.active && !isInProgress(s));
       const totalPages = activeList.reduce((sum, s) => sum + (s.pages ? s.pages.length : 0), 0);
 
       document.getElementById('headerSubtitle').textContent = activeList.length + ' مصادر مفعّلة (' + totalPages + ' صفحة)';
@@ -545,31 +570,99 @@
       }
 
       const typeIcons = { 'PDF نصي': '📘', 'PDF مصور': '📷', 'صورة كتاب': '🖼️', 'TXT': '📄', 'مقالة URL': '🌐', 'YouTube': '▶️', 'نص مضاف': '📝', 'مترجم': '🌍' };
+      const progressing = sources.filter(isInProgress);
+      const done = sources.filter(s => !isInProgress(s));
+      const ids = new Set(done.map(s => s.id));
+      const childrenOf = (id) => done.filter(s => s.parentId === id);
+      const ordered = [];
+      done.forEach(s => { if (!s.parentId || !ids.has(s.parentId)) { ordered.push({ s, child: false }); childrenOf(s.id).forEach(c => ordered.push({ s: c, child: true })); } });
 
-      list.innerHTML = sources.map(src => `
-        <div class="bg-slate-900 border ${src.active ? 'border-emerald-500/40' : 'border-slate-800'} rounded-2xl p-3 flex items-center justify-between gap-2">
+      const btn = 'w-8 h-8 rounded-xl flex items-center justify-center text-xs active:scale-95 ';
+
+      const progRow = (src) => {
+        const job = liveJobs[src.id], tj = trJobs[src.id];
+        let label, pct, live, paused, resumeAct;
+        if (src.translating) {
+          const n = (src.trChunks || []).length, t = (src.trPlan || []).length || 1;
+          pct = Math.round(n / t * 100); live = !!tj; paused = live ? tj.paused : true;
+          label = '🌍 ترجمة: ' + n + '/' + t + ' جزء' + (src.trError ? ' ⚠️ ' + escapeHtml(src.trError) : '');
+          resumeAct = live ? "toggleJobPause('" + src.id + "')" : "resumeTranslation('" + src.id + "')";
+        } else if (job && job.kind === 'ocr') {
+          const st = sourceStats(src); pct = st.total ? Math.round(st.text / st.total * 100) : 0; live = true; paused = job.paused;
+          label = '📝 استخراج النص OCR: ' + st.text + '/' + st.total;
+          resumeAct = "toggleJobPause('" + src.id + "')";
+        } else {
+          const t = src.totalPages || 0, n = src.pages ? src.pages.length : 0;
+          pct = t ? Math.round(n / t * 100) : 0; live = !!job; paused = live ? job.paused : true;
+          label = (live ? (paused ? '⏸ متوقف مؤقتاً: ' : '⬇️ جاري التنزيل: ') : '⚠️ توقف التنزيل: ') + n + '/' + t + ' صفحة';
+          resumeAct = live ? "toggleJobPause('" + src.id + "')" : "resumeImport('" + src.id + "')";
+        }
+        if (src.translating && live) label = (paused ? '⏸ ' : '⏳ ') + label;
+        return `
+        <div class="bg-slate-900 border border-amber-500/40 rounded-2xl p-3 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs font-bold text-white truncate">${typeIcons[src.type] || '📁'} ${escapeHtml(src.title)}</p>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button type="button" onclick="${resumeAct}" class="${btn}bg-emerald-600/20 border border-emerald-500/40 text-emerald-300" title="${paused ? 'استئناف' : 'إيقاف مؤقت'}">${paused ? '▶️' : '⏸'}</button>
+              <button type="button" onclick="cancelJob('${src.id}')" class="${btn}bg-red-500/15 border border-red-500/40 text-red-300" title="إلغاء">✖</button>
+            </div>
+          </div>
+          <div class="text-[10px] text-amber-300">${label}</div>
+          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden"><div class="h-full bg-amber-400" style="width:${pct}%"></div></div>
+        </div>`;
+      };
+
+      const doneRow = ({ s: src, child }) => `
+        <div class="bg-slate-900 border ${src.active ? 'border-emerald-500/40' : 'border-slate-800'} rounded-2xl p-3 flex items-center justify-between gap-2" style="${child ? 'margin-inline-start:22px;border-style:dashed' : ''}">
           <div class="flex items-center gap-2.5 overflow-hidden">
             <input type="checkbox" ${src.active ? 'checked' : ''} onchange="toggleSource('${src.id}')" class="w-4 h-4 accent-emerald-500 shrink-0" />
             <div class="truncate">
               <p class="text-xs font-bold text-white truncate">${typeIcons[src.type] || '📁'} ${escapeHtml(src.title)}</p>
-              <div class="flex items-center gap-2 mt-0.5">
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400">${src.type}</span>
-                <span class="text-[10px] text-slate-400">${src.pages ? src.pages.length : 0}${src.complete === false && src.totalPages ? ' من ' + src.totalPages : ''} صفحة</span>
-                ${src.complete === false ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">⚠️ غير مكتمل، أعد اختيار الملف لإكماله</span>' : ''}
+              <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400">${escapeHtml(src.type === 'مترجم' ? 'TXT مترجم' : src.type)}</span>
+                <span class="text-[10px] text-slate-400">${src.pages ? src.pages.length : 0} صفحة</span>
                 ${(() => { const st = sourceStats(src); return '<span class="text-[10px] px-1.5 py-0.5 rounded ' + (st.text === 0 ? 'bg-red-500/15 text-red-300' : (st.empty ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')) + '">نص: ' + st.text + '/' + st.total + '</span>'; })()}
-                ${src.ocrIncomplete ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">📝 OCR غير مكتمل، أعد اختيار الملف لاحقاً</span>' : ''}
+                ${src.ocrIncomplete ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">📝 OCR غير مكتمل</span>' : ''}
               </div>
             </div>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
-            ${(src.pages || []).some(p => p.image && !pageHasText(p)) ? `<button type="button" onclick="ocrSource('${src.id}')" class="px-2 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-bold active:scale-95">📝 استخراج النص OCR</button>` : ''}
-            <button type="button" onclick="openTranslateModal('${src.id}')" class="px-2 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-bold active:scale-95" title="ترجمة المصدر">
-              🌐 ترجمة
-            </button>
-            <button type="button" onclick="deleteSource('${src.id}')" class="w-8 h-8 rounded-xl bg-slate-800 text-slate-400 active:text-red-400 flex items-center justify-center text-xs">🗑️</button>
+            ${(src.pages || []).some(p => p.image && !pageHasText(p)) ? `<button type="button" onclick="ocrSource('${src.id}')" class="px-2 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-bold active:scale-95">📝 OCR</button>` : ''}
+            ${src.type === 'مترجم' ? `<button type="button" onclick="downloadSourceTxt('${src.id}')" class="${btn}bg-slate-800 text-slate-300" title="تنزيل txt">💾</button>` : `<button type="button" onclick="openTranslateModal('${src.id}')" class="px-2 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-bold active:scale-95" title="ترجمة المصدر">🌐 ترجمة</button>`}
+            <button type="button" onclick="deleteSource('${src.id}')" class="${btn}bg-slate-800 text-slate-400 active:text-red-400" title="حذف المصدر">🗑️</button>
           </div>
-        </div>
-      `).join('');
+        </div>`;
+
+      let html = '';
+      if (progressing.length) html += '<div class="text-[11px] font-bold text-amber-300 px-1 pt-1">⏳ قيد التنزيل / المعالجة (' + progressing.length + ')</div>' + progressing.map(progRow).join('');
+      html += '<div class="text-[11px] font-bold text-emerald-300 px-1 pt-2">📚 المصادر المحملة (' + done.length + ')</div>';
+      html += done.length ? ordered.map(doneRow).join('') : '<div class="text-center text-slate-500 text-[11px] py-3">لا توجد مصادر محملة بعد.</div>';
+      list.innerHTML = html;
+    }
+
+    function toggleJobPause(id) {
+      const j = liveJobs[id] || trJobs[id];
+      if (!j) return;
+      j.paused = !j.paused;
+      renderSources();
+    }
+
+    function resumeImport(id) {
+      pendingResumeId = id;
+      alert('لإكمال التنزيل اختر نفس ملف الكتاب مرة ثانية، وبيكمل من الصفحة اللي وقف عندها.');
+      document.getElementById('fileImporter').click();
+    }
+
+    async function cancelJob(id) {
+      const src = sources.find(s => s.id === id);
+      const what = src && src.translating ? 'الترجمة' : (liveJobs[id] && liveJobs[id].kind === 'ocr' ? 'استخراج النص' : 'التنزيل');
+      if (!confirm('إلغاء ' + what + '؟' + (liveJobs[id] && liveJobs[id].kind === 'ocr' ? '' : ' سيتم حذف الجزء المحمل.'))) return;
+      const j = liveJobs[id] || trJobs[id];
+      if (j) { j.cancel = true; j.paused = false; }
+      if (liveJobs[id] && liveJobs[id].kind === 'ocr') { renderSources(); return; }
+      await dbDelete(id);
+      sources = sources.filter(s => s.id !== id);
+      renderSources();
     }
 
     async function toggleSource(id) {
@@ -581,9 +674,28 @@
     }
 
     async function deleteSource(id) {
+      const src = sources.find(s => s.id === id);
+      if (!src) return;
+      const kids = sources.filter(s => s.parentId === id);
+      if (!confirm('حذف المصدر "' + src.title + '"؟' + (kids.length ? '\nوسيتم حذف ' + kids.length + ' ترجمة مرتبطة به.' : ''))) return;
+      for (const k of kids) { if (trJobs[k.id]) trJobs[k.id].cancel = true; await dbDelete(k.id); }
+      if (liveJobs[id]) { liveJobs[id].cancel = true; liveJobs[id].paused = false; }
       await dbDelete(id);
-      sources = sources.filter(s => s.id !== id);
+      const gone = new Set([id, ...kids.map(k => k.id)]);
+      sources = sources.filter(s => !gone.has(s.id));
       renderSources();
+    }
+
+    function downloadSourceTxt(id) {
+      const src = sources.find(s => s.id === id);
+      if (!src) return;
+      const text = (src.pages || []).map(p => p.text || '').join('\n');
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (src.title || 'translation').replace(/[\\/:*?"<>|]+/g, '_') + (/\.txt$/i.test(src.title) ? '' : '.txt');
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     }
 
     function showProgress(text, pct) {
@@ -674,6 +786,12 @@
     }
 
     async function importPdfFile(file, fileLabel) {
+      const ctl = { kind: 'import', paused: false, cancel: false, file };
+      try { await importPdfFileInner(file, fileLabel, ctl); }
+      finally { Object.keys(liveJobs).forEach(k => { if (liveJobs[k] === ctl) delete liveJobs[k]; }); renderSources(); }
+    }
+
+    async function importPdfFileInner(file, fileLabel, ctl) {
       // إذا يوجد استيراد سابق غير مكتمل لنفس الملف، نكمل من حيث توقف
       let src = sources.find(s => (s.complete === false || s.ocrIncomplete) && s.title === file.name && s.fileSize === file.size);
       let pages = [], startPage = 1, hasText = false;
@@ -708,10 +826,16 @@
         sources.unshift(src);
       }
       src.totalPages = total;
+      liveJobs[src.id] = ctl;
+      pendingResumeId = null;
+      renderSources();
+
+      const abortImport = async () => { try { pdf.destroy(); } catch (_) {} await dbDelete(src.id); sources = sources.filter(x => x.id !== src.id); showProgress('أُلغي التنزيل', 0); hideProgress(); };
 
       // معالجة على دفعات متوازية (Batch = 3)
       const batchSize = 3;
       for (let start = startPage; start <= total; start += batchSize) {
+        if (await ctlGate(ctl)) { await abortImport(); return; }
         const batchPromises = [];
         for (let p = start; p < start + batchSize && p <= total; p++) {
           batchPromises.push((async (pageNum) => {
@@ -753,6 +877,7 @@
         const groupSize = 4;
         let consecutiveFail = 0;
         for (let g = 0; g < ocrPages.length && !ocrStopped; g += groupSize) {
+          if (await ctlGate(ctl)) { await abortImport(); return; }
           const group = ocrPages.slice(g, g + groupSize);
           showProgress('استخراج نص الصفحات المصورة OCR: ' + file.name + fileLabel + ' (' + Math.min(g + groupSize, ocrPages.length) + '/' + ocrPages.length + ')', 95);
           try {
@@ -923,44 +1048,111 @@
       currentTranslateSourceId = sourceId;
       lastTranslatedText = '';
       document.getElementById('translateSourceTitle').textContent = src.title + ' (' + src.pages.length + ' صفحة)';
-      document.getElementById('translationOutput').textContent = 'اختر اللغة واضغط "ترجم الآن" لترجمة محتوى المصدر بدقة عالية، ويمكنك حفظ الترجمة كمصدر جديد في مكتبتك.';
+      document.getElementById('translationOutput').textContent = 'اختر اللغة واضغط "ترجم الآن" لترجمة محتوى المصدر بدقة عالية، وتشتغل الترجمة بالخلفية على أجزاء، وتنحفظ تلقائياً كملف txt تحت الأصل.';
       document.getElementById('saveTransSourceBtn').classList.add('hidden');
       document.getElementById('translateModal').classList.remove('hidden');
       document.getElementById('translateModal').classList.add('flex');
+    }
+
+    function buildTranslationPlan(src) {
+      const plan = [];
+      let cur = [], curLen = 0, imgs = [];
+      const flushText = () => { if (cur.length) plan.push({ k: 't', p: cur }); cur = []; curLen = 0; };
+      const flushImg = () => { if (imgs.length) plan.push({ k: 'i', p: imgs }); imgs = []; };
+      for (const p of (src.pages || [])) {
+        if (pageHasText(p)) {
+          flushImg();
+          const len = p.text.length + 20;
+          if (curLen + len > 6000) flushText();
+          cur.push(p.pageNum); curLen += len;
+        } else if (p.image) {
+          flushText();
+          imgs.push(p.pageNum);
+          if (imgs.length >= 3) flushImg();
+        }
+      }
+      flushText(); flushImg();
+      return plan;
     }
 
     async function executeSourceTranslation() {
       const src = sources.find(s => s.id === currentTranslateSourceId);
       if (!src) return;
       const targetLang = document.getElementById('targetLangSelect').value;
-      const outEl = document.getElementById('translationOutput');
-      const btn = document.getElementById('runTranslateBtn');
-
       const engine = keys[activeEngine] ? activeEngine : ENGINES.find(e => keys[e]);
-      if (!engine) {
-        outEl.textContent = '⚠️ يرجى إضافة مفتاح API واحد على الأقل في تبويبة "الإعدادات" لتشغيل الترجمة الذكية.';
-        return;
-      }
+      const outEl = document.getElementById('translationOutput');
+      if (!engine) { outEl.textContent = '⚠️ يرجى إضافة مفتاح API واحد على الأقل في تبويبة "الإعدادات" لتشغيل الترجمة الذكية.'; return; }
+      const existing = sources.find(s => s.translating && s.parentId === src.id && s.trLang === targetLang);
+      if (existing) { closeModal('translateModal'); resumeTranslation(existing.id); return; }
+      const plan = buildTranslationPlan(src);
+      if (!plan.length) { outEl.textContent = '⚠️ هذا المصدر ما فيه نص ولا صور صفحات للترجمة. شغّل استخراج النص OCR أولاً.'; return; }
+      const shortTitle = src.title.replace(/\.(pdf|txt)$/i, '');
+      const tsrc = { id: 'src-' + Date.now() + 'tr', title: '[مترجم - ' + targetLang + '] ' + shortTitle + '.txt', type: 'مترجم', parentId: src.id, active: false, complete: true, translating: true, trLang: targetLang, trPlan: plan, trChunks: [], pages: [] };
+      await dbPut(tsrc);
+      sources.unshift(tsrc);
+      try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (_) {}
+      closeModal('translateModal');
+      switchTab('files');
+      runTranslation(tsrc.id);
+    }
 
-      btn.disabled = true;
-      btn.textContent = 'جاري الترجمة...';
-      outEl.textContent = '⏳ جاري ترجمة "' + src.title + '" إلى ' + targetLang + ' باستخدام ' + engine.toUpperCase() + '...';
+    function resumeTranslation(id) { runTranslation(id); }
 
+    async function runTranslation(id) {
+      const tsrc = sources.find(s => s.id === id);
+      if (!tsrc || trJobs[id]) return;
+      const parent = sources.find(s => s.id === tsrc.parentId);
+      if (!parent) { alert('المصدر الأصلي محذوف، ما أقدر أكمل الترجمة.'); return; }
+      const engine = keys[activeEngine] ? activeEngine : ENGINES.find(e => keys[e]);
+      if (!engine) { alert('أضف مفتاح محرك في الإعدادات أولاً.'); return; }
+      const job = { paused: false, cancel: false }; trJobs[id] = job;
+      delete tsrc.trError;
+      const lang = tsrc.trLang, plan = tsrc.trPlan;
+      const byNum = new Map((parent.pages || []).map(p => [p.pageNum, p]));
+      notify('🌐 بدأت الترجمة', tsrc.title + ' (' + plan.length + ' جزء)');
+      renderSources();
+      acquireImportWakeLock();
+      let ok = true;
       try {
-        const textToTranslate = src.pages.map(p => '--- صفحة ' + p.pageNum + ' ---\n' + (p.text || '')).join('\n\n').trim();
-        const images = src.pages.filter(p => (!p.text || p.text.length < 20) && p.image).slice(0, 6).map(p => p.image);
-
-        const prompt = 'قم بترجمة محتوى المصدر التالي ترجمة احترافية دقيقة وسلسة إلى اللغة ' + targetLang + ' مع الحفاظ على أرقام الصفحات والتنسيق:\n\n' + textToTranslate.slice(0, 14000);
-        const tr = await callAIWithFallback(engine, prompt, images);
-        const translated = tr.text;
-        lastTranslatedText = translated;
-        outEl.textContent = translated;
-        document.getElementById('saveTransSourceBtn').classList.remove('hidden');
-      } catch (err) {
-        outEl.textContent = isQuotaError(err) ? '⏳ انتهت الحصة المجانية اليومية لمحرك الذكاء الاصطناعي. أضف مفتاح محرك آخر في الإعدادات أو أعد المحاولة بعد تجدد الحصة (خلال 24 ساعة تقريباً).' : '❌ حدث خطأ أثناء الترجمة: ' + err.message;
+        for (let i = tsrc.trChunks.length; i < plan.length; i++) {
+          if (await ctlGate(job)) return;
+          const c = plan[i];
+          let prompt, images = [];
+          if (c.k === 't') {
+            const body = c.p.map(n => '--- صفحة ' + n + ' ---\n' + ((byNum.get(n) || {}).text || '')).join('\n\n');
+            prompt = 'ترجم النص التالي ترجمة دقيقة وسلسة إلى اللغة ' + lang + '. أخرج الترجمة فقط بدون أي شرح أو مقدمة، وأبقِ علامات "--- صفحة N ---" كما هي:\n\n' + body;
+          } else {
+            images = c.p.map(n => (byNum.get(n) || {}).image).filter(Boolean);
+            prompt = 'هذه صور لصفحات من كتاب بالترتيب (أرقامها: ' + c.p.join('، ') + '). اقرأ النص المكتوب في كل صفحة وترجمه إلى اللغة ' + lang + '. ابدأ كل صفحة بسطر "--- صفحة N ---" ثم الترجمة فقط بدون أي شرح.';
+          }
+          let text = null, lastErr = null;
+          for (let attempt = 0; attempt < 3 && text === null; attempt++) {
+            try { const r = await callAIWithFallback(engine, prompt, images); text = r.text; }
+            catch (e) { lastErr = e; if (isQuotaError(e)) break; await new Promise(r => setTimeout(r, 1500)); }
+          }
+          if (job.cancel) return;
+          if (text === null) {
+            ok = false;
+            tsrc.trError = isQuotaError(lastErr) ? 'انتهت الحصة، اضغط ▶ لاحقاً للمتابعة' : ((lastErr && lastErr.message) || 'فشل الاتصال') + ' (اضغط ▶ للمتابعة)';
+            await dbPut(tsrc);
+            notify('⏸ توقفت الترجمة', tsrc.trChunks.length + '/' + plan.length + ' جزء. ' + tsrc.trError);
+            return;
+          }
+          tsrc.trChunks.push(text);
+          await dbPut(tsrc);
+          renderSources();
+        }
+        if (job.cancel) return;
+        const full = tsrc.trChunks.join('\n\n');
+        tsrc.pages = paginateText(tsrc.title, full, '#0ea5e9');
+        tsrc.translating = false; tsrc.active = true;
+        delete tsrc.trChunks; delete tsrc.trPlan; delete tsrc.trError;
+        await dbPut(tsrc);
+        notify('✅ انتهت الترجمة', tsrc.title + ' صارت مصدر نصي (txt) تحت الأصل، وتقدر تحدده مثل بقية المصادر.');
       } finally {
-        btn.disabled = false;
-        btn.textContent = 'ترجم الآن';
+        delete trJobs[id];
+        releaseImportWakeLock();
+        renderSources();
       }
     }
 
@@ -970,19 +1162,7 @@
       alert('✅ تم نسخ النص المترجم');
     }
 
-    async function saveTranslationAsSource() {
-      const src = sources.find(s => s.id === currentTranslateSourceId);
-      if (!src || !lastTranslatedText) return;
-      const lang = document.getElementById('targetLangSelect').value;
-      const newTitle = '[مترجم - ' + lang + '] ' + src.title;
-      const pages = paginateText(newTitle, lastTranslatedText, '#0ea5e9');
-      const newSrc = { id: 'src-' + Date.now(), title: newTitle, type: 'مترجم', active: true, pages };
-      await dbPut(newSrc);
-      sources.unshift(newSrc);
-      renderSources();
-      closeModal('translateModal');
-      alert('✅ تم حفظ النسخة المترجمة كمصدر جديد في مكتبتك!');
-    }
+    async function saveTranslationAsSource() { /* الترجمة الآن تُحفظ تلقائياً كملف txt */ }
 
     // ==================== بوابة الذكاء الاصطناعي الموحدة (6 محركات + OCR) ====================
     async function runOcrOnImage(imageDataUrl, engine) {
@@ -1092,11 +1272,11 @@
       throw lastErr;
     }
 
-    async function fetchT(url, opts, ms = 60000) {
+    async function fetchT(url, opts, ms = 90000) {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), ms);
       try { return await fetch(url, Object.assign({}, opts, { signal: ctl.signal })); }
-      catch (e) { if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال (60 ثانية). تأكد من الإنترنت وحاول مرة ثانية'); throw e; }
+      catch (e) { if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال (90 ثانية). تأكد من الإنترنت وحاول مرة ثانية'); throw e; }
       finally { clearTimeout(t); }
     }
 
@@ -1257,29 +1437,41 @@
     function modelAnswerNote() { return ''; }
 
     async function ocrSource(id) {
-      const src = sources.find(s => s.id === id); if (!src) return;
-      if (!ENGINES.some(e => keys[e])) { alert('أضف مفتاح محرك في الإعدادات أولاً (OCR يحتاج نموذج ذكاء). بدون مفتاح ما يمكن قراءة صور الكتب.'); return; }
+      try { await ocrSourceInner(id); }
+      catch (e) { delete liveJobs[id]; renderSources(); hideProgress(); notify('❌ خطأ في استخراج النص', (e && e.message) || String(e)); alert('❌ خطأ في استخراج النص: ' + ((e && e.message) || e)); }
+    }
+
+    async function ocrSourceInner(id) {
+      const src = sources.find(s => s.id === id); if (!src) { notify('⚠️ المصدر غير موجود', ''); return; }
+      if (liveJobs[id]) { notify('⏳ الاستخراج شغال', 'الاستخراج شغال حالياً لهذا المصدر. شوف قسم قيد التنزيل.'); return; }
+      if (!ENGINES.some(e => keys[e])) { notify('⚠️ ما في مفتاح', 'أضف مفتاح محرك في الإعدادات أولاً'); alert('أضف مفتاح محرك في الإعدادات أولاً (OCR يحتاج نموذج ذكاء). بدون مفتاح ما يمكن قراءة صور الكتب.'); return; }
       const todo = (src.pages || []).filter(p => p.image && !pageHasText(p));
-      if (!todo.length) { alert('كل صفحات هذا المصدر فيها نص.'); return; }
-      const groupSize = 4; let stopped = false, fails = 0, done = 0;
+      if (!todo.length) { notify('ℹ️', 'كل صفحات هذا المصدر فيها نص'); return; }
+      const groupSize = 4; let stopped = false, fails = 0, lastErr = '';
+      const octl = { kind: 'ocr', paused: false, cancel: false }; liveJobs[id] = octl;
+      notify('📝 بدأ استخراج النص', src.title + ' (' + todo.length + ' صفحة بدون نص). تابعه في قسم قيد التنزيل.');
+      renderSources();
       for (let g = 0; g < todo.length && !stopped; g += groupSize) {
+        if (await ctlGate(octl)) { stopped = true; break; }
         const group = todo.slice(g, g + groupSize);
         showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')', Math.round(g / todo.length * 100));
         try {
           const parts = await runOcrOnPages(group.map(p => p.image), ocrEngine);
           if (parts.length === group.length) group.forEach((p, i) => { p.text = parts[i] || ''; });
-          else for (const p of group) { try { p.text = await runOcrOnImage(p.image, ocrEngine); } catch (e2) { if (isQuotaError(e2)) { stopped = true; break; } } }
+          else for (const p of group) { try { p.text = await runOcrOnImage(p.image, ocrEngine); } catch (e2) { lastErr = (e2 && e2.message) || String(e2); if (isQuotaError(e2)) { stopped = true; break; } } }
           fails = 0;
-        } catch (err) { fails++; if (isQuotaError(err) || fails >= 2) { stopped = true; src._ocrErr = (err && err.message) || String(err); } }
-        done = (src.pages || []).filter(pageHasText).length;
+        } catch (err) { fails++; lastErr = (err && err.message) || String(err); if (isQuotaError(err) || fails >= 2) stopped = true; }
         await dbPut(src); renderSources();
       }
       hideProgress();
+      delete liveJobs[id];
       const st = sourceStats(src);
-      if (st.text > 0) { src.type = 'PDF نصي'; }
+      if (st.text > 0) src.type = 'PDF نصي';
       if (st.empty === 0) delete src.ocrIncomplete; else src.ocrIncomplete = true;
       await dbPut(src); renderSources();
-      alert(stopped ? ('⏸ توقف الاستخراج (غالباً انتهت الحصة). تم ' + st.text + ' من ' + st.total + ' صفحة. اضغط الزر مرة ثانية لاحقاً لإكمال الباقي.') : ('✅ تم استخراج النص: ' + st.text + ' من ' + st.total + ' صفحة.'));
+      if (octl.cancel) notify('⏹ أُلغي الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة');
+      else if (stopped) { notify('⏸ توقف الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة. السبب: ' + (lastErr || 'غير معروف').slice(0, 160)); alert('⏸ توقف الاستخراج. تم ' + st.text + ' من ' + st.total + ' صفحة.\nالسبب: ' + (lastErr || 'غير معروف') + '\nاضغط الزر مرة ثانية لاحقاً لإكمال الباقي.'); }
+      else notify('✅ انتهى استخراج النص', 'تم استخراج النص: ' + st.text + ' من ' + st.total + ' صفحة');
     }
 
     async function sendMessage() {
