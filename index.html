@@ -59,14 +59,16 @@
         <option value="grok">⚡ Grok</option>
         <option value="deepseek">👁️ DeepSeek OCR</option>
       </select>
-      <button type="button" onclick="clearChat()" class="p-1.5 rounded-xl bg-slate-800/90 active:bg-slate-700 border border-slate-700 text-xs text-slate-300" title="مسح المحادثة">
-        🧹
-      </button>
     </div>
   </header>
 
   <!-- ==================== التبويبة 1: المحادثات ==================== -->
   <section id="tab-chat" class="flex-1 flex flex-col overflow-hidden">
+    <div class="px-3 py-1.5 flex items-center gap-1.5 border-b border-slate-800 shrink-0 bg-slate-950/60">
+      <button type="button" onclick="newChat()" class="text-[12px] font-bold bg-emerald-600 active:bg-emerald-500 text-white px-3 py-1.5 rounded-xl">➕ دردشة جديدة</button>
+      <button type="button" onclick="openChatList()" class="text-[12px] font-bold bg-slate-800 border border-slate-700 text-emerald-300 px-3 py-1.5 rounded-xl active:scale-95">🗂 الدردشات <span id="chatCount">(0)</span></button>
+      <button type="button" onclick="deleteCurrentChat()" class="text-[12px] bg-slate-800 border border-slate-700 text-red-300 px-3 py-1.5 rounded-xl active:scale-95 mr-auto" title="حذف الدردشة الحالية">🗑</button>
+    </div>
     <main id="chatContainer" class="flex-1 overflow-y-auto smooth-scroll px-4 py-3 space-y-3.5 select-text">
       <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 space-y-2">
         <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm">
@@ -235,6 +237,11 @@
         <textarea rows="2" id="key-deepseek" placeholder="sk-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
+      <button type="button" onclick="testAllKeys()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-sky-300 transition">
+        🔍 فحص المفاتيح (احفظ أولاً)
+      </button>
+      <div id="keyTestResult" class="text-[11px] text-slate-200 leading-relaxed whitespace-pre-line select-text"></div>
+
       <button type="button" onclick="saveAllSettings()" class="w-full py-2.5 rounded-xl bg-emerald-600 active:bg-emerald-500 font-bold text-xs text-white transition">
         💾 حفظ جميع المفاتيح والإعدادات
       </button>
@@ -325,6 +332,17 @@
       <button type="button" class="px-3 py-1 rounded-lg bg-slate-800 text-xs">✕ إغلاق</button>
     </div>
     <img id="imageViewerImg" src="" class="max-h-[82vh] max-w-full rounded-xl border border-slate-700 object-contain" />
+  </div>
+
+
+  <div id="chatListModal" class="hidden fixed inset-0 z-[9998] bg-black/70 items-end justify-center" onclick="if(event.target===this)closeModal('chatListModal')">
+    <div class="w-full max-w-2xl bg-slate-900 border-t border-slate-700 rounded-t-3xl p-4 space-y-3" style="max-height:80dvh;display:flex;flex-direction:column">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-white text-sm">🗂 الدردشات المحفوظة</h3>
+        <button type="button" onclick="closeModal('chatListModal')" class="text-slate-300 px-2">✕</button>
+      </div>
+      <div id="chatListBody" class="overflow-y-auto space-y-2 select-text" style="min-height:60px"></div>
+    </div>
   </div>
 
   <script>
@@ -419,6 +437,7 @@
         sources = [sample];
       }
       renderSources();
+      restoreLastChat();
     }
 
     // ==================== إدارة المفاتيح والمحركات ====================
@@ -447,7 +466,8 @@
       localStorage.setItem('baheth_ocr_engine', val);
     }
 
-    function keyListFromText(t) { return Array.from(new Set(String(t || '').split(/[\s,،;؛]+/).map(k => k.trim()).filter(Boolean))); }
+    function cleanKey(k) { return String(k || '').replace(/[^\x21-\x7E]/g, '').replace(/^["'`]+|["'`]+$/g, ''); }
+    function keyListFromText(t) { return Array.from(new Set(String(t || '').split(/[\s,،;؛]+/).map(cleanKey).filter(Boolean))); }
     function saveAllSettings() {
       ENGINES.forEach(e => {
         const val = keyListFromText(document.getElementById('key-' + e).value).join('\n');
@@ -457,6 +477,26 @@
       saveToggles();
       { const c = ENGINES.map(e => keyList(e).length ? (ENGINE_NAMES[e] + ': ' + keyList(e).length) : '').filter(Boolean).join('، '); alert('✅ تم حفظ المفاتيح' + (c ? ' (' + c + ')' : '')); }
       switchTab('chat');
+    }
+
+    async function testAllKeys() {
+      const out = document.getElementById('keyTestResult');
+      out.textContent = '⏳ جاري الفحص...';
+      let lines = [];
+      for (const e of ENGINES) {
+        const list = keyListFromText(document.getElementById('key-' + e).value);
+        for (let i = 0; i < list.length; i++) {
+          let r;
+          try { await callOneKey(e, list[i], 'رد بكلمة واحدة: تم'); r = '✅ يعمل'; }
+          catch (err) {
+            const m = (err && err.message) || String(err);
+            r = isQuotaError(err) ? '⏳ الحصة خلصت أو ضغط طلبات (المفتاح صحيح)' : (/api key|invalid|unauthorized|permission|401|403|incorrect/i.test(m) ? '❌ غير صالح: انسخه من جديد' : '⚠️ ' + m.slice(0, 80));
+          }
+          lines.push((ENGINE_NAMES[e]) + ' - المفتاح ' + (i + 1) + ' (يبدأ بـ ' + list[i].slice(0, 4) + '، طوله ' + list[i].length + '): ' + r);
+          out.textContent = lines.join('\n') + '\n⏳ ...';
+        }
+      }
+      out.textContent = lines.length ? lines.join('\n') : 'ما فيه مفاتيح مضافة.';
     }
 
     function saveToggles() {
@@ -985,7 +1025,7 @@
 
     // عدة مفاتيح لكل محرك: تُفصل بسطر جديد أو فاصلة أو مسافة
     function keyList(engine) {
-      return Array.from(new Set(String(keys[engine] || '').split(/[\s,،;؛]+/).map(k => k.trim()).filter(Boolean)));
+      return keyListFromText(keys[engine]);
     }
     const keyCooldown = {}; // المفتاح -> وقت انتهاء الإيقاف المؤقت
     const keyCursor = {};   // آخر مفتاح نجح لكل محرك
@@ -1049,6 +1089,14 @@
       throw lastErr;
     }
 
+    async function fetchT(url, opts, ms = 60000) {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), ms);
+      try { return await fetch(url, Object.assign({}, opts, { signal: ctl.signal })); }
+      catch (e) { if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال (60 ثانية). تأكد من الإنترنت وحاول مرة ثانية'); throw e; }
+      finally { clearTimeout(t); }
+    }
+
     async function callOneKey(engine, key, promptText, imageDataUrls = []) {
 
       // 1. Google Gemini
@@ -1058,9 +1106,9 @@
           const b64 = img.includes(',') ? img.split(',')[1] : img;
           parts.push({ inline_data: { mime_type: 'image/jpeg', data: b64 } });
         });
-        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + key, {
+        const res = await fetchT('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
           body: JSON.stringify({ contents: [{ parts }] })
         });
         const data = await res.json();
@@ -1082,7 +1130,7 @@
           contentPayload = [{ type: 'text', text: promptText }];
           imageDataUrls.forEach(img => contentPayload.push({ type: 'image_url', image_url: { url: img } }));
         }
-        const res = await fetch(cfg.url, {
+        const res = await fetchT(cfg.url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
           body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: contentPayload }] })
@@ -1100,7 +1148,7 @@
           contentArr.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } });
         });
         contentArr.push({ type: 'text', text: promptText });
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
+        const res = await fetchT('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1190,7 +1238,9 @@
 
       try {
         const strictMode = document.getElementById('strictModeToggle').checked;
-        const topPages = [...allPages].sort((a, b) => b.score - a.score).slice(0, 14);
+        const prev = (cur ? cur.msgs : []).filter(m => !m.loading).slice(0, -1).slice(-6);
+        const histText = prev.map(m => (m.sender === 'user' ? 'المستخدم: ' : 'باحث: ') + String(m.text).slice(0, 400)).join('\n');
+        const topPages = [...allPages].sort((a, b) => b.score - a.score).slice(0, 8);
 
         let prompt = 'أنت المساعد الذكي "باحث". أجب باللغة العربية بدقة بالاعتماد على الصفحات والمصادر المرفقة.\n' +
           'قواعد الإجابة:\n' +
@@ -1198,25 +1248,27 @@
           '2. في نهاية ردك مباشرة، أضف هذا السطر لعرض صورة الصفحة للمستخدم:\n' +
           'REF_PAGE: [اسم_المصدر_بالضبط] | [رقم_الصفحة]\n' +
           (strictMode ? '3. التزم حصرياً بالمصادر المرفقة. إذا لم تجد الإجابة، قل: "عذراً، هذه المعلومة غير متوفرة في المصادر المفعلة حالياً."\n' : '') +
+          (histText ? '\nسياق الدردشة السابقة:\n' + histText + '\n' : '') +
           '\nسؤال المستخدم: ' + query + '\n\n--- محتوى المصادر ---\n';
 
         let imagesToSend = [];
         topPages.forEach(p => {
           prompt += '\n[المصدر: ' + p.sourceTitle + ' | صفحة: ' + p.pageNum + ']\n';
           if (p.text && p.text.trim().length > 20) {
-            prompt += p.text.slice(0, 2200) + '\n';
+            prompt += p.text.slice(0, 1800) + '\n';
           } else if (p.image) {
             imagesToSend.push(p.image);
           }
         });
 
         let aiResult;
+        { const b = document.querySelector('#' + loadingId + ' .msg-body'); if (b) b.textContent = '⚡ جاري سؤال ' + (ENGINE_NAMES[chosenEngine] || chosenEngine) + '...'; }
         try {
-          aiResult = await callAIWithFallback(chosenEngine, prompt, imagesToSend.slice(0, 8));
+          aiResult = await callAIWithFallback(chosenEngine, prompt, imagesToSend.slice(0, 3));
         } catch (aiErr) {
           const msg = isQuotaError(aiErr)
             ? '⏳ انتهت الحصة المجانية اليومية لمحرك الذكاء الاصطناعي (الباقة المجانية لـ Gemini تعطي نحو 20 طلباً في اليوم، واستيراد الكتب المصورة يستهلك منها).\n\nالحلول:\n1. أضف مفتاح محرك آخر من تبويبة "الإعدادات" (مثل Grok أو Mistral أو ChatGPT) وسيتحول التطبيق إليه تلقائياً عند امتلاء حصة Gemini.\n2. أو أعد المحاولة بعد تجدد الحصة (عادة خلال 24 ساعة).'
-            : '⚠️ تعذر الوصول لمحركات الذكاء الاصطناعي: ' + ((aiErr && aiErr.message) || aiErr) + '\nتأكد من صحة مفاتيح API في الإعدادات ومن اتصال الإنترنت.';
+            : '⚠️ تعذر الوصول لمحركات الذكاء الاصطناعي: ' + ((aiErr && aiErr.message) || aiErr) + '\nافتح الإعدادات واضغط "🔍 فحص المفاتيح" لمعرفة أي مفتاح فيه مشكلة، وتأكد من الإنترنت.';
           updateMessage(loadingId, msg, [], false);
           return;
         }
@@ -1243,7 +1295,7 @@
 
         updateMessage(loadingId, rawReply, citedPages, shouldAutoSpeak);
       } catch (err) {
-        updateMessage(loadingId, '❌ خطأ من محرك ' + chosenEngine.toUpperCase() + ': ' + err.message, [], false);
+        updateMessage(loadingId, '❌ خطأ من محرك ' + chosenEngine.toUpperCase() + ': ' + err.message + '\nجرّب فحص المفاتيح من الإعدادات.', [], false);
       }
     }
 
@@ -1293,6 +1345,103 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     }
 
+    // ==================== سجل الدردشات ====================
+    let chats = [];
+    try { chats = JSON.parse(localStorage.getItem('baheth_chats') || '[]'); } catch (_) { chats = []; }
+    let cur = null, restoring = false;
+    const msgIndex = {};
+    let welcomeHTML = '';
+    function ensureCur() { if (!cur) cur = { id: 'chat-' + Date.now(), title: '', ts: Date.now(), msgs: [] }; return cur; }
+    function updateChatCount() { const el = document.getElementById('chatCount'); if (el) el.textContent = '(' + chats.length + ')'; }
+    function persistChat() {
+      if (restoring || !cur) return;
+      const real = cur.msgs.filter(m => !m.loading);
+      if (!real.some(m => m.sender === 'user')) return;
+      cur.title = String(real.find(m => m.sender === 'user').text).replace(/\s+/g, ' ').slice(0, 45);
+      cur.ts = Date.now();
+      const saved = { id: cur.id, title: cur.title, ts: cur.ts, msgs: real.map(m => ({ sender: m.sender, text: m.text, cites: m.cites || [] })) };
+      const i = chats.findIndex(c => c.id === cur.id);
+      if (i >= 0) chats[i] = saved; else chats.unshift(saved);
+      while (true) {
+        try { localStorage.setItem('baheth_chats', JSON.stringify(chats)); break; }
+        catch (_) { if (chats.length > 1) chats.pop(); else break; }
+      }
+      localStorage.setItem('baheth_cur_chat', cur.id);
+      updateChatCount();
+    }
+    function renderChat(c) {
+      restoring = true;
+      const box = document.getElementById('chatContainer');
+      box.innerHTML = welcomeHTML;
+      Object.keys(msgIndex).forEach(k => delete msgIndex[k]);
+      (c ? c.msgs : []).forEach(m => {
+        const id = appendMessage(m.sender, m.text);
+        if (m.sender === 'bot') {
+          const cp = (m.cites || []).map(x => {
+            const src = sources.find(s => s.title === x.t);
+            const pg = src && (src.pages || []).find(p => p.pageNum === x.p);
+            return pg ? { sourceTitle: src.title, pageNum: pg.pageNum, image: pg.image } : null;
+          }).filter(Boolean);
+          updateMessage(id, m.text, cp, false);
+        }
+      });
+      restoring = false;
+      cur = c ? { id: c.id, title: c.title, ts: c.ts, msgs: c.msgs.map(m => ({ sender: m.sender, text: m.text, cites: m.cites || [] })) } : null;
+      const b2 = document.getElementById('chatContainer'); b2.scrollTop = b2.scrollHeight;
+    }
+    function restoreLastChat() {
+      welcomeHTML = document.getElementById('chatContainer').innerHTML;
+      updateChatCount();
+      const id = localStorage.getItem('baheth_cur_chat');
+      const c = chats.find(x => x.id === id);
+      if (c) renderChat(c);
+    }
+    function newChat() {
+      persistChat();
+      cur = null;
+      localStorage.removeItem('baheth_cur_chat');
+      renderChat(null);
+      switchTab('chat');
+    }
+    function deleteChatById(id) {
+      if (!confirm('حذف هذه الدردشة نهائياً؟')) return;
+      chats = chats.filter(c => c.id !== id);
+      try { localStorage.setItem('baheth_chats', JSON.stringify(chats)); } catch (_) {}
+      if (cur && cur.id === id) { cur = null; localStorage.removeItem('baheth_cur_chat'); renderChat(null); }
+      updateChatCount();
+      openChatList();
+    }
+    function deleteCurrentChat() {
+      if (!cur || !cur.msgs.length) { renderChat(null); return; }
+      if (!chats.some(c => c.id === cur.id)) { if (confirm('مسح الدردشة الحالية؟')) { cur = null; renderChat(null); } return; }
+      deleteChatById(cur.id);
+    }
+    function openChatList() {
+      persistChat();
+      const body = document.getElementById('chatListBody');
+      if (!chats.length) body.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">لا توجد دردشات محفوظة بعد.</p>';
+      else body.innerHTML = chats.map(c => {
+        const d = new Date(c.ts).toLocaleString('ar-KW', { dateStyle: 'short', timeStyle: 'short' });
+        const active = cur && cur.id === c.id;
+        return '<div class="flex items-center gap-2 bg-slate-950 border ' + (active ? 'border-emerald-500' : 'border-slate-800') + ' rounded-xl p-2.5">' +
+          '<button type="button" class="flex-1 text-right min-w-0" onclick="openChatById(\'' + c.id + '\')">' +
+          '<div class="text-sm font-bold text-white truncate">' + escapeHtml(c.title || 'دردشة') + '</div>' +
+          '<div class="text-[10px] text-slate-400">' + d + ' · ' + c.msgs.length + ' رسالة' + (active ? ' · الحالية' : '') + '</div></button>' +
+          '<button type="button" class="text-red-300 px-2 py-1 bg-slate-800 rounded-lg" onclick="deleteChatById(\'' + c.id + '\')">🗑</button></div>';
+      }).join('');
+      const m = document.getElementById('chatListModal');
+      m.classList.remove('hidden'); m.classList.add('flex');
+    }
+    function openChatById(id) {
+      const c = chats.find(x => x.id === id);
+      if (!c) return;
+      persistChat();
+      renderChat(c);
+      localStorage.setItem('baheth_cur_chat', id);
+      closeModal('chatListModal');
+      switchTab('chat');
+    }
+
     function appendMessage(sender, text) {
       const chat = document.getElementById('chatContainer');
       const id = 'msg-' + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -1305,12 +1454,24 @@
       div.innerHTML = '<div class="msg-body whitespace-pre-line">' + escapeHtml(text) + '</div>';
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
+      if (!restoring) {
+        ensureCur();
+        const m = { sender, text, id, loading: sender === 'bot' };
+        cur.msgs.push(m); msgIndex[id] = m;
+        if (sender === 'user') persistChat();
+      }
       return id;
     }
 
     function updateMessage(id, text, citedPages, autoSpeak) {
       const el = document.getElementById(id);
       if (!el) return;
+      if (!restoring && msgIndex[id]) {
+        const m = msgIndex[id];
+        m.text = text; m.loading = false;
+        m.cites = (citedPages || []).map(c => ({ t: c.sourceTitle, p: c.pageNum }));
+        persistChat();
+      }
 
       let pagesHtml = '';
       if (citedPages && citedPages.length > 0) {
