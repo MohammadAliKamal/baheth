@@ -1,4 +1,4 @@
-const CACHE_NAME = 'baheth-ios-v5';
+const CACHE_NAME = 'baheth-ios-v6';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
@@ -10,5 +10,15 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
+        return res;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
   e.respondWith(caches.match(e.request).then((cached) => cached || fetch(e.request)));
 });
