@@ -152,6 +152,7 @@
         <span>➕ اختر كتب PDF أو صور صفحات أو TXT (بلا حدود)</span>
         <input type="file" id="fileImporter" multiple accept=".txt,.pdf,image/*" class="hidden" onchange="handleFilesImport(event)" />
       </label>
+      <p class="text-[10px] text-slate-400 leading-relaxed">💡 تقدر تحدد أكثر من كتاب دفعة واحدة من تطبيق "الملفات". أثناء الاستيراد خلّ التطبيق مفتوحاً، وتقدّمك ينحفظ تلقائياً — إذا انقطع، أعد اختيار نفس الملف ويكمّل من حيث وقف.</p>
     </div>
 
     <!-- لوحة 2: رابط مقالة URL -->
@@ -511,7 +512,9 @@
               <p class="text-xs font-bold text-white truncate">${typeIcons[src.type] || '📁'} ${escapeHtml(src.title)}</p>
               <div class="flex items-center gap-2 mt-0.5">
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400">${src.type}</span>
-                <span class="text-[10px] text-slate-400">${src.pages ? src.pages.length : 0} صفحة</span>
+                <span class="text-[10px] text-slate-400">${src.pages ? src.pages.length : 0}${src.complete === false && src.totalPages ? ' من ' + src.totalPages : ''} صفحة</span>
+                ${src.complete === false ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">⚠️ غير مكتمل، أعد اختيار الملف لإكماله</span>' : ''}
+                ${src.ocrIncomplete ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">📝 OCR غير مكتمل، أعد اختيار الملف لاحقاً</span>' : ''}
               </div>
             </div>
           </div>
@@ -551,99 +554,191 @@
       setTimeout(() => document.getElementById('importProgressWrap').classList.add('hidden'), 1800);
     }
 
-    // ==================== 1. استيراد الكتب والصور السريع (مع دعم OCR) ====================
+    // ==================== قفل الشاشة أثناء الاستيراد ====================
+    let importWakeLock = null;
+    let importRunning = false;
+
+    async function acquireImportWakeLock() {
+      if (!('wakeLock' in navigator)) return;
+      try { importWakeLock = await navigator.wakeLock.request('screen'); } catch (_) { importWakeLock = null; }
+    }
+
+    function releaseImportWakeLock() {
+      if (importWakeLock) { importWakeLock.release().catch(() => {}); importWakeLock = null; }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && importRunning) acquireImportWakeLock();
+    });
+
+    // ==================== 1. استيراد الكتب والصور (حفظ تلقائي + إكمال بعد انقطاع) ====================
     async function handleFilesImport(event) {
       const files = Array.from(event.target.files);
       if (!files.length) return;
 
-      for (const file of files) {
-        showProgress('فهرسة سريعة: ' + file.name, 5);
+      importRunning = true;
+      acquireImportWakeLock();
+      let importedCount = 0, failedCount = 0;
+
+      for (let fi = 0; fi < files.length; fi++) {
+        const file = files[fi];
+        const fileLabel = files.length > 1 ? ' (ملف ' + (fi + 1) + '/' + files.length + ')' : '';
+        showProgress('فهرسة: ' + file.name + fileLabel, 2);
         try {
           if (file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')) {
             const text = await file.text();
             const pages = paginateText(file.name, text, '#10b981');
-            const newSrc = { id: 'src-' + Date.now() + Math.random().toString(36).slice(2, 6), title: file.name, type: 'TXT', active: true, pages };
+            const newSrc = { id: 'src-' + Date.now() + Math.random().toString(36).slice(2, 6), title: file.name, type: 'TXT', active: true, complete: true, pages };
             await dbPut(newSrc);
             sources.unshift(newSrc);
+            importedCount++;
             showProgress('اكتمل: ' + file.name, 100);
           } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            const total = pdf.numPages;
-            const pages = [];
-            let hasText = false;
-
-            // معالجة على دفعات متوازية (Batch = 3) لمضاعفة السرعة
-            const batchSize = 3;
-            for (let start = 1; start <= total; start += batchSize) {
-              const batchPromises = [];
-              for (let p = start; p < start + batchSize && p <= total; p++) {
-                batchPromises.push((async (pageNum) => {
-                  const page = await pdf.getPage(pageNum);
-                  const textContent = await page.getTextContent();
-                  const pageText = textContent.items.map(it => it.str).join(' ').trim();
-                  if (pageText.length > 20) hasText = true;
-
-                  const viewport = page.getViewport({ scale: 1.15 });
-                  const canvas = document.createElement('canvas');
-                  canvas.width = viewport.width;
-                  canvas.height = viewport.height;
-                  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-                  const imgData = canvas.toDataURL('image/jpeg', 0.65);
-
-                  let finalPageText = pageText;
-                  // إذا كان الكتاب مصوراً واختار المستخدم محرك OCR، نستخرج النص فوراً
-                  if (pageText.length <= 20 && keys[ocrEngine]) {
-                    try {
-                      finalPageText = await runOcrOnImage(imgData, ocrEngine);
-                    } catch (_) {}
-                  }
-                  return { pageNum, text: finalPageText, image: imgData };
-                })(p));
-              }
-              const batchResults = await Promise.all(batchPromises);
-              pages.push(...batchResults);
-              const pct = Math.min(100, Math.round((pages.length / total) * 100));
-              showProgress(file.name + ' (' + pages.length + '/' + total + ')', pct);
-            }
-
-            pages.sort((a, b) => a.pageNum - b.pageNum);
-            const anyText = hasText || pages.some(p => p.text && p.text.length > 20);
-            const newSrc = {
-              id: 'src-' + Date.now() + Math.random().toString(36).slice(2, 6),
-              title: file.name,
-              type: anyText ? 'PDF نصي' : 'PDF مصور',
-              active: true,
-              pages
-            };
-            await dbPut(newSrc);
-            sources.unshift(newSrc);
+            await importPdfFile(file, fileLabel);
+            importedCount++;
           } else if (file.type.startsWith('image/')) {
             const imgData = await compressImageFile(file);
             let extracted = '';
             if (keys[ocrEngine]) {
-              showProgress('استخراج النص بالـ OCR...', 50);
+              showProgress('استخراج النص بالـ OCR: ' + file.name + fileLabel, 50);
               try { extracted = await runOcrOnImage(imgData, ocrEngine); } catch (_) {}
             }
-            const newSrc = {
-              id: 'src-' + Date.now() + Math.random().toString(36).slice(2, 6),
-              title: file.name,
-              type: 'صورة كتاب',
-              active: true,
-              pages: [{ pageNum: 1, text: extracted, image: imgData }]
-            };
+            const newSrc = { id: 'src-' + Date.now() + Math.random().toString(36).slice(2, 6), title: file.name, type: 'صورة كتاب', active: true, complete: true, pages: [{ pageNum: 1, text: extracted, image: imgData }] };
             await dbPut(newSrc);
             sources.unshift(newSrc);
+            importedCount++;
             showProgress('اكتمل استيراد الصورة', 100);
           }
         } catch (err) {
-          alert('تعذر استيراد: ' + file.name);
+          failedCount++;
+          console.error('Import failed:', file.name, err);
+        }
+        renderSources();
+      }
+
+      importRunning = false;
+      releaseImportWakeLock();
+
+      if (failedCount > 0) {
+        showProgress('⚠️ تعذر استيراد ' + failedCount + ' ملف', 100);
+        alert('تعذر استيراد ' + failedCount + ' من ' + files.length + ' ملف. جرّب استيرادها واحداً واحداً.');
+      } else {
+        showProgress('✅ اكتمل الاستيراد (' + importedCount + ')', 100);
+      }
+      hideProgress();
+      event.target.value = '';
+    }
+
+    async function importPdfFile(file, fileLabel) {
+      // إذا يوجد استيراد سابق غير مكتمل لنفس الملف، نكمل من حيث توقف
+      let src = sources.find(s => (s.complete === false || s.ocrIncomplete) && s.title === file.name && s.fileSize === file.size);
+      let pages = [], startPage = 1, hasText = false;
+      if (src && src.pages && src.pages.length > 0) {
+        if (!confirm('يوجد استيراد غير مكتمل لهذا الكتاب (' + src.pages.length + ' من ' + (src.totalPages || '?') + ' صفحة).\n\nموافق = الإكمال من حيث توقف\nإلغاء = البدء من جديد')) {
+          await dbDelete(src.id);
+          sources = sources.filter(s => s.id !== src.id);
+          src = null;
+        } else {
+          pages = src.pages;
+          startPage = pages.length + 1;
+          hasText = pages.some(p => p.text && p.text.length > 20);
         }
       }
 
-      renderSources();
-      hideProgress();
-      event.target.value = '';
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const total = pdf.numPages;
+
+      if (!src) {
+        src = {
+          id: 'src-' + Date.now() + Math.random().toString(36).slice(2, 6),
+          title: file.name,
+          fileSize: file.size,
+          type: 'PDF',
+          active: true,
+          complete: false,
+          totalPages: total,
+          pages: []
+        };
+        pages = src.pages;
+        sources.unshift(src);
+      }
+      src.totalPages = total;
+
+      // معالجة على دفعات متوازية (Batch = 3)
+      const batchSize = 3;
+      for (let start = startPage; start <= total; start += batchSize) {
+        const batchPromises = [];
+        for (let p = start; p < start + batchSize && p <= total; p++) {
+          batchPromises.push((async (pageNum) => {
+            const page = await pdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(it => it.str).join(' ').trim();
+
+            // الصفحات النصية لا تحتاج صورة إطلاقاً: توفير كبير في الوقت والذاكرة
+            if (pageText.length > 20) {
+              return { pageNum, text: pageText };
+            }
+
+            // الصفحات المصوّرة فقط: نرسم الصورة ونشغّل OCR عند توفر مفتاح
+            const viewport = page.getViewport({ scale: 1.15 });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            const imgData = canvas.toDataURL('image/jpeg', 0.65);
+            return { pageNum, text: pageText, image: imgData };
+          })(p));
+        }
+        const batchResults = await Promise.all(batchPromises);
+        batchResults.forEach(r => { if (r.text && r.text.length > 20) hasText = true; });
+        pages.push(...batchResults);
+        pages.sort((a, b) => a.pageNum - b.pageNum);
+
+        // حفظ تلقائي بعد كل دفعة: لا يضيع التقدم عند مكالمة أو إغلاق مفاجئ
+        await dbPut(src);
+        const pct = Math.min(100, Math.round((pages.length / total) * 100));
+        showProgress(file.name + fileLabel + ' (' + pages.length + '/' + total + ')', pct);
+        renderSources();
+      }
+
+      // مرحلة OCR: الصفحات المصورة فقط، على دفعات من 4 صور لكل طلب لتوفير الحصة
+      const ocrPages = pages.filter(p => p.image && (!p.text || p.text.length <= 20));
+      let ocrStopped = false;
+      if (ocrPages.length && ENGINES.some(e => keys[e])) {
+        const groupSize = 4;
+        let consecutiveFail = 0;
+        for (let g = 0; g < ocrPages.length && !ocrStopped; g += groupSize) {
+          const group = ocrPages.slice(g, g + groupSize);
+          showProgress('استخراج نص الصفحات المصورة OCR: ' + file.name + fileLabel + ' (' + Math.min(g + groupSize, ocrPages.length) + '/' + ocrPages.length + ')', 95);
+          try {
+            const parts = await runOcrOnPages(group.map(p => p.image), ocrEngine);
+            if (parts.length === group.length) {
+              group.forEach((p, i) => { p.text = parts[i] || ''; });
+            } else {
+              // إذا لم يطابق التقسيم عدد الصفحات، نعالج هذه الدفعة صفحة صفحة
+              for (const p of group) {
+                try { p.text = await runOcrOnImage(p.image, ocrEngine); }
+                catch (e2) { if (isQuotaError(e2)) { ocrStopped = true; break; } }
+              }
+            }
+            consecutiveFail = 0;
+            if (group.some(p => p.text && p.text.length > 20)) hasText = true;
+          } catch (err) {
+            consecutiveFail++;
+            if (isQuotaError(err) || consecutiveFail >= 2) ocrStopped = true;
+          }
+          await dbPut(src);
+        }
+      }
+      if (ocrStopped && pages.some(p => p.image && (!p.text || p.text.length <= 20))) src.ocrIncomplete = true;
+      else delete src.ocrIncomplete;
+
+      src.complete = true;
+      src.type = hasText ? 'PDF نصي' : 'PDF مصور';
+      if (!src.ocrIncomplete) delete src.fileSize; // نحتفظ بالحجم لإكمال الـ OCR لاحقاً عند الحاجة
+      await dbPut(src);
+      try { pdf.destroy(); } catch (_) {}
     }
 
     function paginateText(title, fullText, color = '#10b981') {
@@ -812,12 +907,13 @@
         const images = src.pages.filter(p => (!p.text || p.text.length < 20) && p.image).slice(0, 6).map(p => p.image);
 
         const prompt = 'قم بترجمة محتوى المصدر التالي ترجمة احترافية دقيقة وسلسة إلى اللغة ' + targetLang + ' مع الحفاظ على أرقام الصفحات والتنسيق:\n\n' + textToTranslate.slice(0, 14000);
-        const translated = await callUnifiedAI(engine, prompt, images);
+        const tr = await callAIWithFallback(engine, prompt, images);
+        const translated = tr.text;
         lastTranslatedText = translated;
         outEl.textContent = translated;
         document.getElementById('saveTransSourceBtn').classList.remove('hidden');
       } catch (err) {
-        outEl.textContent = '❌ حدث خطأ أثناء الترجمة: ' + err.message;
+        outEl.textContent = isQuotaError(err) ? '⏳ انتهت الحصة المجانية اليومية لمحرك الذكاء الاصطناعي. أضف مفتاح محرك آخر في الإعدادات أو أعد المحاولة بعد تجدد الحصة (خلال 24 ساعة تقريباً).' : '❌ حدث خطأ أثناء الترجمة: ' + err.message;
       } finally {
         btn.disabled = false;
         btn.textContent = 'ترجم الآن';
@@ -847,7 +943,43 @@
     // ==================== بوابة الذكاء الاصطناعي الموحدة (6 محركات + OCR) ====================
     async function runOcrOnImage(imageDataUrl, engine) {
       const prompt = 'استخرج كافة النصوص المكتوبة في صورة صفحة الكتاب هذه بدقة تامة وبدون أي إضافة أو شرح:';
-      return await callUnifiedAI(engine, prompt, [imageDataUrl]);
+      const r = await callAIWithFallback(engine, prompt, [imageDataUrl]);
+      return r.text;
+    }
+
+    const ENGINE_NAMES = { gemini: 'Gemini', openai: 'ChatGPT', claude: 'Claude', mistral: 'Mistral', grok: 'Grok', deepseek: 'DeepSeek' };
+
+    function isQuotaError(err) {
+      const m = ((err && err.message) || String(err || '')).toLowerCase();
+      return m.includes('quota') || m.includes('429') || m.includes('rate limit') || m.includes('resource has been exhausted') || m.includes('exceeded') || m.includes('too many requests');
+    }
+
+    // يحاول المحرك المفضل ثم بقية المحركات المضافة تلقائياً عند فشلها
+    async function callAIWithFallback(preferredEngine, promptText, imageDataUrls = []) {
+      let order = [preferredEngine, ...ENGINES.filter(e => e !== preferredEngine)].filter(e => e && keys[e]);
+      if (imageDataUrls.length) order = order.filter(e => e !== 'deepseek'); // DeepSeek لا يستقبل صوراً هنا
+      if (!order.length) throw new Error('لا يوجد محرك مضاف يدعم هذا الطلب. أضف مفتاح API في الإعدادات.');
+      let lastErr = null;
+      const failed = [];
+      for (const eng of order) {
+        try {
+          const text = await callUnifiedAI(eng, promptText, imageDataUrls);
+          if (text && text.trim()) return { text, engine: eng, failed };
+        } catch (err) {
+          lastErr = err;
+          failed.push(eng);
+        }
+      }
+      const err = lastErr || new Error('فشلت كل محركات الذكاء الاصطناعي المضافة');
+      err.failedEngines = failed;
+      throw err;
+    }
+
+    // OCR على دفعات: حتى 4 صفحات في الطلب الواحد لتقليل استهلاك الحصة المجانية
+    async function runOcrOnPages(imageDataUrls, engine) {
+      const prompt = 'هذه ' + imageDataUrls.length + ' صور لصفحات متتالية من كتاب. استخرج النص المكتوب في كل صفحة بدقة تامة، وافصل نص كل صفحة عن التي تليها بسطر يحتوي فقط على:\n===PAGE===\nأخرج النصوص بنفس ترتيب الصور وبدون أي شرح أو إضافة.';
+      const r = await callAIWithFallback(engine, prompt, imageDataUrls);
+      return r.text.split(/===\s*PAGE\s*===/).map(s => s.trim());
     }
 
     async function callUnifiedAI(engine, promptText, imageDataUrls = []) {
@@ -1013,7 +1145,18 @@
           }
         });
 
-        let rawReply = await callUnifiedAI(chosenEngine, prompt, imagesToSend.slice(0, 8));
+        let aiResult;
+        try {
+          aiResult = await callAIWithFallback(chosenEngine, prompt, imagesToSend.slice(0, 8));
+        } catch (aiErr) {
+          const msg = isQuotaError(aiErr)
+            ? '⏳ انتهت الحصة المجانية اليومية لمحرك الذكاء الاصطناعي (الباقة المجانية لـ Gemini تعطي نحو 20 طلباً في اليوم، واستيراد الكتب المصورة يستهلك منها).\n\nالحلول:\n1. أضف مفتاح محرك آخر من تبويبة "الإعدادات" (مثل Grok أو Mistral أو ChatGPT) وسيتحول التطبيق إليه تلقائياً عند امتلاء حصة Gemini.\n2. أو أعد المحاولة بعد تجدد الحصة (عادة خلال 24 ساعة).'
+            : '⚠️ تعذر الوصول لمحركات الذكاء الاصطناعي: ' + ((aiErr && aiErr.message) || aiErr) + '\nتأكد من صحة مفاتيح API في الإعدادات ومن اتصال الإنترنت.';
+          updateMessage(loadingId, msg, [], false);
+          return;
+        }
+        let rawReply = aiResult.text;
+        if (aiResult.failed.length) rawReply = '⚙️ ملاحظة: تحولت الإجابة تلقائياً إلى محرك ' + (ENGINE_NAMES[aiResult.engine] || aiResult.engine) + '.\n\n' + rawReply;
         let citedPages = [];
 
         const refRegex = /REF_PAGE:\s*\[?([^|\]]+)\]?\s*\|\s*\[?(\d+)\]?/gi;
