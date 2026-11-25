@@ -1471,6 +1471,7 @@
       await dbPut(src); renderSources();
       if (octl.cancel) notify('⏹ أُلغي الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة');
       else if (stopped) { notify('⏸ توقف الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة. السبب: ' + (lastErr || 'غير معروف').slice(0, 160)); alert('⏸ توقف الاستخراج. تم ' + st.text + ' من ' + st.total + ' صفحة.\nالسبب: ' + (lastErr || 'غير معروف') + '\nاضغط الزر مرة ثانية لاحقاً لإكمال الباقي.'); }
+      else if (st.empty > 0) { notify('⚠️ انتهى الاستخراج وبقيت صفحات فاضية', 'تم ' + st.text + ' من ' + st.total + ' صفحة' + (lastErr ? '. آخر خطأ: ' + lastErr.slice(0, 120) : '. الباقي صفحات ما انقرأ منها نص، اضغط الزر مرة ثانية.')); }
       else notify('✅ انتهى استخراج النص', 'تم استخراج النص: ' + st.text + ' من ' + st.total + ' صفحة');
     }
 
