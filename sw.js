@@ -1,4 +1,4 @@
-const CACHE_NAME = 'baheth-ios-v11';
+const CACHE_NAME = 'baheth-ios-v12';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
@@ -23,4 +23,4 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(caches.match(e.request).then((cached) => cached || fetch(e.request)));
 });
 
-// build 11b
+// build 12a
