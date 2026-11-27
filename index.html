@@ -42,6 +42,39 @@
     button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid #fbbf24 !important; outline-offset: 2px; }
     [data-sender]:focus { outline: 2px solid #fbbf24; outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+    :root { color-scheme: dark; }
+    * { font-family: 'Tajawal', 'Segoe UI', system-ui, -apple-system, Roboto, 'Noto Sans Arabic', Arial, sans-serif; scrollbar-color: #475569 transparent; scrollbar-width: thin; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    button, select, input, textarea, summary { touch-action: manipulation; }
+    button:not(.skip-link) { cursor: pointer; min-height: 44px; min-width: 44px; }
+    select { min-height: 44px; cursor: pointer; }
+    input[type=text], input[type=url], textarea { min-height: 44px; font-size: 16px !important; border-color: #475569 !important; }
+    input[type=checkbox] { width: 24px !important; height: 24px !important; min-width: 24px; flex-shrink: 0; cursor: pointer; }
+    input[type=range] { min-height: 44px; }
+    .text-\[9px\] { font-size: 11px !important; }
+    .text-\[10px\] { font-size: 12px !important; line-height: 1.6 !important; }
+    .text-\[11px\] { font-size: 13px !important; line-height: 1.6 !important; }
+    .text-xs { font-size: 13.5px !important; line-height: 1.7 !important; }
+    .text-slate-400 { color: #a9b6c9 !important; }
+    .text-slate-500 { color: #94a3b8 !important; }
+    @media (hover: hover) { button:not(:disabled):hover { filter: brightness(1.18); } }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    body.hide-keys .kfp-show { display: none; }
+    body:not(.hide-keys) .kfp-hide { display: none; }
+    body:not(.hide-keys) textarea[id^="key-"] { -webkit-text-security: none !important; }
+    body.hide-keys textarea[id^="key-"] { -webkit-text-security: disc !important; }
+    .ft-btn { min-height: 52px; }
+    .app-card { background: #0f172a; border: 1px solid #334155; border-radius: 14px; padding: 10px 12px; margin-bottom: 8px; }
+    .app-btn { min-height: 44px; padding: 8px 14px; border-radius: 12px; background: #1e293b; border: 1px solid #64748b; color: #e2e8f0; font-weight: 700; font-size: 13px; }
+    .app-btn-primary { background: #047857; border-color: #10b981; color: #fff; }
+    .app-btn-danger { background: #7f1d1d; border-color: #f87171; color: #fff; }
+    @media (forced-colors: active) {
+      button, select, textarea, input { border: 1px solid ButtonText !important; forced-color-adjust: auto; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid Highlight !important; }
+      .ft-btn[aria-selected="true"] { outline: 3px solid Highlight; }
+    }
+    @media (prefers-contrast: more) { .border-slate-800, .border-slate-700 { border-color: #94a3b8 !important; } }
   </style>
 </head>
 <body class="h-[100dvh] flex flex-col overflow-hidden">
@@ -150,7 +183,7 @@
         <select id="ocrEngineSelect" onchange="saveOcrEngine(this.value)" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-emerald-400 font-bold focus:outline-none">
           <option value="auto">تلقائي: نفس محرك الدردشة (افتراضي)</option>
           <option value="gemini">Gemini Vision OCR</option>
-          <option value="deepseek">DeepSeek OCR API</option>
+          <option value="deepseek">DeepSeek Vision OCR (deepseek-flash)</option>
           <option value="openai">ChatGPT Vision OCR</option>
           <option value="claude">Claude Vision OCR</option>
           <option value="mistral">Mistral Pixtral OCR</option>
@@ -198,7 +231,12 @@
       </div>
     </div>
 
-    <div id="booksList" class="flex-1 overflow-y-auto smooth-scroll space-y-2 pb-3"></div>
+    <div id="filesTabs" role="tablist" aria-label="تصنيف المصادر" class="grid grid-cols-3 gap-1.5 mb-2.5 shrink-0">
+      <button type="button" role="tab" id="ft-loaded" aria-controls="booksList" onclick="setFilesView('loaded')" class="ft-btn rounded-xl py-2 px-1 text-[11px] font-bold flex flex-col items-center gap-0.5 border"><span>📚 المحملة</span><span class="ft-n">0</span></button>
+      <button type="button" role="tab" id="ft-progress" aria-controls="booksList" onclick="setFilesView('progress')" class="ft-btn rounded-xl py-2 px-1 text-[11px] font-bold flex flex-col items-center gap-0.5 border"><span>⏳ قيد التحميل</span><span class="ft-n">0</span></button>
+      <button type="button" role="tab" id="ft-translated" aria-controls="booksList" onclick="setFilesView('translated')" class="ft-btn rounded-xl py-2 px-1 text-[11px] font-bold flex flex-col items-center gap-0.5 border"><span>🌍 المترجمة</span><span class="ft-n">0</span></button>
+    </div>
+    <div id="booksList" role="tabpanel" class="flex-1 overflow-y-auto smooth-scroll space-y-2 pb-3"></div>
   </section>
 
   <section id="tab-settings" class="flex-1 hidden overflow-y-auto smooth-scroll px-4 py-3 space-y-3.5" aria-label="الإعدادات">
@@ -235,7 +273,7 @@
       </div>
 
       <div class="space-y-1">
-        <label class="text-[11px] font-bold text-cyan-400">6. DeepSeek OCR / Chat API Key</label>
+        <label class="text-[11px] font-bold text-cyan-400">6. DeepSeek API Key (دردشة وترجمة وقراءة صور)</label>
         <textarea rows="2" id="key-deepseek" placeholder="sk-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
@@ -246,8 +284,9 @@
         <input type="text" id="orModel" value="google/gemini-2.5-flash-lite" dir="ltr" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
       </div>
 
+      <button type="button" id="keyMaskBtn" onclick="toggleKeyMask()" aria-pressed="true" class="km-btn w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-amber-300 transition mb-2">🙈 أرقام المفاتيح مخفية (اضغط لإظهارها)</button>
       <button type="button" onclick="showDiagnostics()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-emerald-300 transition mb-2">📊 تشخيص المحركات (لكل مفتاح: الطلبات والأخطاء ومن خدم كل مهمة)</button>
-      <button type="button" onclick="testAllKeys()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-sky-300 transition">
+      <button type="button" id="keyTestBtn" onclick="testAllKeys()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-sky-300 transition">
         🔍 فحص المفاتيح (فحص خفيف لا يستهلك الحصة)
       </button>
       <div id="keyTestResult" class="text-[11px] text-slate-200 leading-relaxed select-text"></div>
@@ -281,6 +320,14 @@
         </div>
         <input type="checkbox" id="chatSoundsToggle" checked onchange="saveToggles()" class="w-5 h-5 accent-emerald-500" />
       </div>
+
+      <div class="flex items-center justify-between pt-2.5">
+        <div>
+          <p class="text-xs font-bold text-white">أصوات التحميل واستخراج النص والترجمة</p>
+          <p class="text-[10px] text-slate-400">نغمة مختلفة عند بدء وانتهاء كل عملية، وعند تعذرها</p>
+        </div>
+        <input type="checkbox" id="eventSoundsToggle" checked onchange="saveToggles()" class="w-5 h-5 accent-emerald-500" />
+      </div>
     </div>
 
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
@@ -300,6 +347,8 @@
         <div class="flex gap-2"><select id="sfxTick" onchange="sfxSave('tick')" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"></select>
         <button type="button" onclick="sfxPreview('tick')" aria-label="تجربة صوت الانتظار" class="px-3 rounded-xl bg-slate-800 border border-slate-600 font-bold text-xs text-emerald-300">▶️ تجربة</button></div>
       </div>
+      <p class="text-xs font-bold text-white pt-2">أصوات العمليات (تحميل، استخراج نص، ترجمة)</p>
+      <div id="eventSfxBox" class="space-y-3"></div>
       <div class="space-y-1">
         <label for="sfxVol" class="text-[11px] font-bold text-slate-300">مستوى صوت المؤثرات: <span id="sfxVolVal">40٪</span></label>
         <input type="range" id="sfxVol" min="0.1" max="1" step="0.05" value="0.4" oninput="sfxSave()" class="w-full accent-emerald-500" />
@@ -516,6 +565,7 @@
     document.getElementById('autoSpeakToggle').checked = localStorage.getItem('baheth_autospeak') !== 'false';
     document.getElementById('strictModeToggle').checked = localStorage.getItem('baheth_strict') !== 'false';
     document.getElementById('chatSoundsToggle').checked = localStorage.getItem('baheth_chat_sounds') !== 'false';
+    document.getElementById('eventSoundsToggle').checked = localStorage.getItem('baheth_event_sounds') !== 'false';
     const ttsRateEl = document.getElementById('ttsRate'), ttsVolEl = document.getElementById('ttsVolume');
     if (ttsRateEl) {
       ttsRateEl.value = localStorage.getItem('baheth_tts_rate') || '1';
@@ -549,7 +599,33 @@
       if (/^AIza/.test(k)) return 'gemini';
       return '';
     }
-    function keyTag(k) { return k.length > 12 ? k.slice(0, 6) + '…' + k.slice(-4) : k.slice(0, 3) + '…'; }
+    function keyTagRaw(k) { return k.length > 12 ? k.slice(0, 6) + '…' + k.slice(-4) : k.slice(0, 3) + '…'; }
+    function keyMasked() { return localStorage.getItem('baheth_hide_keys') !== 'false'; }
+    function keyTag(k) { return keyMasked() ? '••••' : keyTagRaw(k); }
+    function keyTagH(k, extra) {
+      const e0 = x => String(x == null ? '' : x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      return '<span class="kfp-show">' + e0(keyTagRaw(k) + (extra || '')) + '</span><span class="kfp-hide" aria-hidden="true">••••</span><span class="sr-only kfp-hide">مخفي</span>';
+    }
+    function updateKeyMaskUi() {
+      const m = keyMasked();
+      document.body.classList.toggle('hide-keys', m);
+      document.querySelectorAll('.km-btn').forEach(b => {
+        b.textContent = m ? '🙈 أرقام المفاتيح مخفية (اضغط لإظهارها)' : '👁 أرقام المفاتيح ظاهرة (اضغط لإخفائها قبل تصوير الشاشة)';
+        b.setAttribute('aria-pressed', m ? 'true' : 'false');
+        b.setAttribute('aria-label', m ? 'أرقام المفاتيح مخفية. اضغط لإظهارها' : 'أرقام المفاتيح ظاهرة. اضغط لإخفائها');
+      });
+    }
+    function toggleKeyMask() {
+      localStorage.setItem('baheth_hide_keys', keyMasked() ? 'false' : 'true');
+      updateKeyMaskUi();
+      if (window.a11yAnnounce) window.a11yAnnounce(keyMasked() ? 'تم إخفاء أرقام المفاتيح' : 'تم إظهار أرقام المفاتيح', false);
+    }
+    function dismissKeyTest() {
+      const out = document.getElementById('keyTestResult'); if (out) out.innerHTML = '';
+      if (window.a11yAnnounce) window.a11yAnnounce('تم إخفاء نتيجة الفحص', false);
+      const b = document.getElementById('keyTestBtn'); if (b) { try { b.focus(); } catch (_) {} }
+    }
+    updateKeyMaskUi();
     function saveKeysFromFields() {
       const lists = {}, moved = [];
       ENGINES.forEach(e => { lists[e] = keyListFromText(document.getElementById('key-' + e).value); });
@@ -602,11 +678,18 @@
       else if (engine === 'openai') { url = 'https://api.openai.com/v1/models'; headers['Authorization'] = 'Bearer ' + key; }
       else if (engine === 'mistral') { url = 'https://api.mistral.ai/v1/models'; headers['Authorization'] = 'Bearer ' + key; }
       else if (engine === 'grok') { url = 'https://api.x.ai/v1/models'; headers['Authorization'] = 'Bearer ' + key; }
-      else if (engine === 'deepseek') { url = 'https://api.deepseek.com/models'; headers['Authorization'] = 'Bearer ' + key; }
+      else if (engine === 'deepseek') { url = 'https://api.deepseek.com/user/balance'; headers['Authorization'] = 'Bearer ' + key; }
       else if (engine === 'openrouter') { url = 'https://openrouter.ai/api/v1/auth/key'; headers['Authorization'] = 'Bearer ' + key; }
       else if (engine === 'claude') { url = 'https://api.anthropic.com/v1/models'; headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; headers['anthropic-dangerous-direct-browser-access'] = 'true'; }
       const res = await fetchT(url, { headers }, 30000);
       if (res.ok) {
+        if (engine === 'deepseek') {
+          let d = null; try { d = await res.json(); } catch (_) {}
+          if (d && d.is_available === false) { const e0 = new Error('HTTP 402: رصيد DeepSeek غير كاف'); e0.status = 402; throw e0; }
+          const b0 = d && d.balance_infos && d.balance_infos[0];
+          if (b0) return 'الرصيد: ' + b0.total_balance + ' ' + b0.currency;
+          return true;
+        }
         if (engine === 'openrouter') {
           try {
             const d = (await res.json()).data || {};
@@ -662,7 +745,8 @@
       results.forEach(r => cnt[r.st]++);
       const summary = 'نتيجة الفحص: ' + results.length + ' مفتاح. ✅ يعمل: ' + cnt.ok + '، ❌ غير صالح: ' + cnt.bad + '، 💳 يحتاج رصيد: ' + cnt.billing + '، ⏳ حصة ممتلئة: ' + cnt.quota + '، ⚠️ أخرى: ' + cnt.warn + '.';
       const todayStr = new Date().toDateString();
-      let h = '<div style="font-weight:700;margin-bottom:6px">' + esc(summary) + '</div>';
+      const dismissBtn = '<button type="button" onclick="dismissKeyTest()" class="app-btn app-btn-danger" aria-label="إخفاء نتيجة الفحص">✖ إلغاء وإخفاء نتيجة الفحص</button>';
+      let h = '<div style="font-weight:700;margin-bottom:6px">' + esc(summary) + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">' + dismissBtn + '<button type="button" class="km-btn app-btn"></button></div>';
       if (moved.length) h += '<div style="color:#fbbf24;margin-bottom:6px">🔧 ' + moved.map(esc).join('<br>') + '</div>';
       ENGINES.forEach(e => {
         const rs = results.filter(r => r.e === e);
@@ -674,7 +758,7 @@
           const row = (a, b) => '<div>' + a + ': ' + esc(b) + '</div>';
           h += '<li style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px;margin-bottom:6px">' +
             '<div style="font-weight:700">' + esc(ENGINE_NAMES[e]) + ' - المفتاح ' + (r.i + 1) + ' من ' + r.n + '</div>' +
-            row('الحالة', r.txt) + row('البصمة', keyTag(r.k) + ' (طوله ' + r.k.length + ' حرفاً)') +
+            row('الحالة', r.txt) + '<div>البصمة: ' + keyTagH(r.k, ' (طوله ' + r.k.length + ' حرفاً)') + '</div>' +
             (r.extra ? row('معلومات', r.extra) : '') +
             r.notes.map(x => '<div>' + esc(x) + '</div>').join('') +
             (cd ? row('الإيقاف المؤقت', 'موقوف حتى ' + cd) : '') +
@@ -682,7 +766,8 @@
         });
         h += '</ul>';
       });
-      out.innerHTML = h;
+      h += '<div style="margin-top:8px">' + dismissBtn + '</div>';
+      out.innerHTML = h; updateKeyMaskUi();
       out.removeAttribute('aria-busy');
       out.setAttribute('tabindex', '-1'); out.setAttribute('aria-label', 'نتائج فحص المفاتيح');
       if (window.a11yAnnounce) window.a11yAnnounce(summary, true);
@@ -693,6 +778,7 @@
       localStorage.setItem('baheth_autospeak', document.getElementById('autoSpeakToggle').checked);
       localStorage.setItem('baheth_strict', document.getElementById('strictModeToggle').checked);
       localStorage.setItem('baheth_chat_sounds', document.getElementById('chatSoundsToggle').checked);
+      localStorage.setItem('baheth_event_sounds', document.getElementById('eventSoundsToggle').checked);
     }
 
     function switchTab(tabName) {
@@ -726,6 +812,11 @@
 
     function notify(title, body) {
       try {
+        const tt = String(title || '');
+        const ek = /بدأ استخراج/.test(tt) ? 'ocrStart' : /انتهى استخراج النص|انتهى الاستخراج/.test(tt) ? 'ocrEnd' : /بدأت الترجمة/.test(tt) ? 'trStart' : /انتهت الترجمة/.test(tt) ? 'trEnd' : /خطأ في استخراج|توقف الاستخراج|توقفت الترجمة/.test(tt) ? 'evErr' : '';
+        if (ek && window.evSound) window.evSound(ek);
+      } catch (_) {}
+      try {
         let t = document.getElementById('toastBox');
         if (!t) {
           t = document.createElement('div'); t.id = 'toastBox';
@@ -733,10 +824,11 @@
           document.body.appendChild(t);
         }
         const d = document.createElement('div');
-        d.style.cssText = 'background:#064e3b;border:1px solid #10b981;color:#ecfdf5;border-radius:14px;padding:10px 12px;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.5)';
+        const tn = String(title || ''), pal = /❌/.test(tn) ? ['#450a0a', '#ef4444'] : /⚠|⏸|⏹/.test(tn) ? ['#451a03', '#f59e0b'] : /✅|📷/.test(tn) ? ['#064e3b', '#10b981'] : ['#0c4a6e', '#38bdf8'];
+        d.style.cssText = 'background:' + pal[0] + ';border:1px solid ' + pal[1] + ';color:#f8fafc;border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.6;box-shadow:0 6px 20px rgba(0,0,0,.5);direction:rtl;text-align:right';
         d.innerHTML = '<b>' + escapeHtml(title) + '</b><div style="opacity:.85;margin-top:2px">' + escapeHtml(body || '') + '</div>';
         t.appendChild(d);
-        setTimeout(() => d.remove(), 8000);
+        setTimeout(() => d.remove(), 10000);
       } catch (_) {}
       try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body: body || '' }); } catch (_) {}
       try { if (navigator.vibrate) navigator.vibrate(200); } catch (_) {}
@@ -745,8 +837,28 @@
     function clean0(t) { return String(t || '').replace(/<[^>]*>/g, '').replace(/[\u{1F000}-\u{1FFFF}\u2600-\u27BF\uFE0F]/gu, '').trim(); }
     function isInProgress(src) { return src.complete === false || !!src.translating || (liveJobs[src.id] && liveJobs[src.id].kind === 'ocr'); }
 
+    let filesView = localStorage.getItem('baheth_files_view') || 'loaded';
+    function setFilesView(v) {
+      filesView = v; localStorage.setItem('baheth_files_view', v); renderSources();
+      const names = { loaded: 'المصادر المحملة', progress: 'المصادر قيد التحميل', translated: 'المصادر المترجمة' };
+      if (window.a11yAnnounce) window.a11yAnnounce('تم فتح قسم ' + names[v], false);
+    }
+    function updateFilesTabs(c) {
+      const names = { loaded: 'المصادر المحملة', progress: 'المصادر قيد التحميل', translated: 'المصادر المترجمة' };
+      Object.keys(names).forEach(k => {
+        const b = document.getElementById('ft-' + k); if (!b) return;
+        const sel = filesView === k;
+        b.setAttribute('aria-selected', sel ? 'true' : 'false');
+        b.setAttribute('aria-label', names[k] + ': ' + c[k] + (sel ? '، القسم المفتوح' : ''));
+        b.querySelector('.ft-n').textContent = c[k];
+        b.className = 'ft-btn rounded-xl py-2 px-1 text-[11px] font-bold flex flex-col items-center gap-0.5 border ' + (sel ? 'bg-emerald-600/25 border-emerald-400 text-emerald-200' : 'bg-slate-900 border-slate-600 text-slate-200');
+      });
+      const p = document.getElementById('booksList'); if (p) p.setAttribute('aria-labelledby', 'ft-' + filesView);
+    }
+
     function renderSources() {
       const list = document.getElementById('booksList');
+      { const pr = sources.filter(isInProgress), dn = sources.filter(x => !isInProgress(x)); updateFilesTabs({ loaded: dn.filter(x => x.type !== 'مترجم').length, progress: pr.length, translated: dn.filter(x => x.type === 'مترجم').length }); }
       const activeList = sources.filter(s => s.active && !isInProgress(s));
       const totalPages = activeList.reduce((sum, s) => sum + (s.pages ? s.pages.length : 0), 0);
 
@@ -761,10 +873,8 @@
       const typeIcons = { 'PDF نصي': '📘', 'PDF مصور': '📷', 'صورة كتاب': '🖼️', 'TXT': '📄', 'مقالة URL': '🌐', 'YouTube': '▶️', 'نص مضاف': '📝', 'مترجم': '🌍' };
       const progressing = sources.filter(isInProgress);
       const done = sources.filter(s => !isInProgress(s));
-      const ids = new Set(done.map(s => s.id));
-      const childrenOf = (id) => done.filter(s => s.parentId === id);
-      const ordered = [];
-      done.forEach(s => { if (!s.parentId || !ids.has(s.parentId)) { ordered.push({ s, child: false }); childrenOf(s.id).forEach(c => ordered.push({ s: c, child: true })); } });
+      const loadedList = done.filter(s => s.type !== 'مترجم'), translatedList = done.filter(s => s.type === 'مترجم');
+      const ordered = loadedList.map(s => ({ s, child: false })), orderedTr = translatedList.map(s => ({ s, child: false }));
 
       const btn = 'w-11 h-11 rounded-xl flex items-center justify-center text-xs active:scale-95 ';
 
@@ -823,10 +933,11 @@
           </div>
         </div>`;
 
+      const emptyMsg = (t) => '<div class="text-center text-slate-300 text-[12px] py-6">' + t + '</div>';
       let html = '';
-      if (progressing.length) html += '<div role="heading" aria-level="3" class="text-[11px] font-bold text-amber-300 px-1 pt-1">⏳ قيد التنزيل / المعالجة (' + progressing.length + ')</div>' + progressing.map(progRow).join('');
-      html += '<div role="heading" aria-level="3" class="text-[11px] font-bold text-emerald-300 px-1 pt-2">📚 المصادر المحملة (' + done.length + ')</div>';
-      html += done.length ? ordered.map(doneRow).join('') : '<div class="text-center text-slate-500 text-[11px] py-3">لا توجد مصادر محملة بعد.</div>';
+      if (filesView === 'progress') html = progressing.length ? progressing.map(progRow).join('') : emptyMsg('لا توجد مصادر قيد التحميل أو المعالجة الآن.');
+      else if (filesView === 'translated') html = orderedTr.length ? orderedTr.map(doneRow).join('') : emptyMsg('لا توجد مصادر مترجمة بعد. اضغط زر ترجم على أي مصدر محمل.');
+      else html = ordered.length ? ordered.map(doneRow).join('') : emptyMsg('لا توجد مصادر محملة بعد.');
       list.innerHTML = html;
     }
 
@@ -922,6 +1033,7 @@
 
       importRunning = true;
       acquireImportWakeLock();
+      if (window.evSound) window.evSound('dlStart');
       let importedCount = 0, failedCount = 0;
 
       for (let fi = 0; fi < files.length; fi++) {
@@ -965,6 +1077,7 @@
         showProgress('✅ اكتمل الاستيراد (' + importedCount + ')', 100);
       }
       hideProgress();
+      if (window.evSound) window.evSound(failedCount > 0 ? 'evErr' : 'dlEnd');
       event.target.value = '';
     }
 
@@ -1337,7 +1450,6 @@
 
     async function callAIWithFallback(preferredEngine, promptText, imageDataUrls = [], task = 'chat') {
       let order = [preferredEngine, ...ENGINES.filter(e => e !== preferredEngine)].filter(e => e && keys[e]);
-      if (imageDataUrls.length) order = order.filter(e => e !== 'deepseek'); // DeepSeek لا يستقبل صوراً هنا
       order = [...order.filter(e => !engineCooled(e)), ...order.filter(e => engineCooled(e))];
       if (!order.length) throw new Error('لا يوجد محرك مضاف يدعم هذا الطلب. أضف مفتاح API في الإعدادات.');
       const failed = [], errs = [];
@@ -1375,7 +1487,7 @@
       const row = (a, b, col) => '<div' + (col ? ' style="color:' + col + '"' : '') + '>' + a + ': ' + b + '</div>';
       const todayStr = new Date().toDateString();
       const fmtClock = t => new Date(t).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' });
-      let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📊 تشخيص المحركات</b><button onclick="document.getElementById(\'diagOverlay\').remove()" style="background:#334155;border-radius:10px;padding:6px 14px;color:#fff;font-weight:700">إغلاق</button></div>';
+      let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📊 تشخيص المحركات</b><button type="button" class="km-btn app-btn"></button><button type="button" onclick="document.getElementById(\'diagOverlay\').remove()" class="app-btn" style="background:#334155;color:#fff">إغلاق</button></div>';
       h += '<div style="margin-bottom:10px;color:#94a3b8">محرك الدردشة والترجمة: <b style="color:#6ee7b7">' + esc(ENGINE_NAMES[activeEngine] || activeEngine) + '</b> | محرك OCR: <b style="color:#6ee7b7">' + (ocrEngine === 'auto' ? 'تلقائي (نفس محرك الدردشة)' : (ocrEngine === 'offline' ? 'المدمج' : esc(ENGINE_NAMES[ocrEngine] || ocrEngine))) + '</b><br>إذا فشل المحرك المفضل ينتقل التطبيق تلقائياً لكل محرك له مفتاح، وإذا خلصت كلها ينتقل لاستخراج النص المدمج (OCR).</div>';
       h += '<h2 style="font-weight:700;font-size:14px;margin:8px 0">المحركات والمفاتيح (كل مفتاح لوحده)</h2>';
       ENGINES.forEach(e => {
@@ -1389,7 +1501,7 @@
           const u = keyUsage[k] && keyUsage[k].d === todayStr ? keyUsage[k].n : 0;
           const cd = keyCooldown[k] && keyCooldown[k] > Date.now() ? keyCooldown[k] : 0;
           h += '<div role="group" aria-label="' + esc(ENGINE_NAMES[e]) + ' المفتاح ' + (i + 1) + '" style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px;margin-bottom:6px">';
-          h += '<div style="font-weight:700">' + esc(ENGINE_NAMES[e]) + ' - المفتاح ' + (i + 1) + ' من ' + list.length + ' (' + esc(keyTag(k)) + ')</div>';
+          h += '<div style="font-weight:700">' + esc(ENGINE_NAMES[e]) + ' - المفتاح ' + (i + 1) + ' من ' + list.length + ' (' + keyTagH(k) + ')</div>';
           h += row('الحالة', cd ? 'موقوف حتى ' + fmtClock(cd) : 'جاهز', cd ? '#fbbf24' : '#6ee7b7');
           h += row('طلبات اليوم', String(u));
           h += row('الإجمالي', 'طلبات ' + st.req + '، نجح ' + st.ok + '، فشل ' + st.fail);
@@ -1423,23 +1535,26 @@
         h += '</div>';
       });
       h += '<button onclick="if(confirm(\'مسح سجل التشخيص؟\')){diag={engines:{},log:[],offline:{pages:0,fail:0,lastErr:\'\',lastAt:0}};keyStats={};saveKS();saveDiag();showDiagnostics();}" style="margin-top:14px;background:#7f1d1d;border-radius:10px;padding:8px 14px;color:#fff;font-weight:700">مسح السجل</button>';
-      ov.innerHTML = h; document.body.appendChild(ov);
+      ov.innerHTML = h; document.body.appendChild(ov); updateKeyMaskUi();
     }
 
     let tessWorker = null, tessInit = null;
+    function withTimeout(p, ms, msg) {
+      let t; return Promise.race([p, new Promise((_, no) => { t = setTimeout(() => no(new Error(msg)), ms); })]).finally(() => clearTimeout(t));
+    }
     function loadTesseractLib() {
       if (window.Tesseract) return Promise.resolve();
-      return new Promise((ok, no) => {
+      return withTimeout(new Promise((ok, no) => {
         const sc = document.createElement('script');
         sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
         sc.onload = () => ok();
         sc.onerror = () => no(new Error('تعذر تحميل مكتبة OCR المدمجة. تأكد من الإنترنت'));
         document.head.appendChild(sc);
-      });
+      }), 45000, 'انتهت مهلة تحميل مكتبة OCR المدمجة. تأكد من الإنترنت وحاول مرة ثانية');
     }
     async function getTessWorker() {
       if (tessWorker) return tessWorker;
-      if (!tessInit) tessInit = (async () => { await loadTesseractLib(); return await window.Tesseract.createWorker(['ara', 'eng'], 1, {}); })();
+      if (!tessInit) tessInit = (async () => { await loadTesseractLib(); return await withTimeout(window.Tesseract.createWorker(['ara', 'eng'], 1, {}), 150000, 'انتهت مهلة تجهيز OCR المدمج (تحميل بيانات اللغة). تأكد من الإنترنت'); })();
       try { tessWorker = await tessInit; } finally { tessInit = null; }
       return tessWorker;
     }
@@ -1447,7 +1562,7 @@
       const d = diag.offline;
       try {
         const w = await getTessWorker();
-        const r = await w.recognize(img);
+        const r = await withTimeout(w.recognize(img), 180000, 'انتهت مهلة قراءة الصفحة بالـ OCR المدمج');
         const t = ((r && r.data && r.data.text) || '').trim();
         if (t) d.pages++; else { d.fail++; d.lastErr = 'لم يُقرأ نص من الصفحة'; }
         d.lastAt = Date.now(); saveDiag();
@@ -1609,21 +1724,30 @@
           openai: { url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
           mistral: { url: 'https://api.mistral.ai/v1/chat/completions', model: 'mistral-small-latest' },
           grok: { url: 'https://api.x.ai/v1/chat/completions', model: 'grok-4-latest' },
-          deepseek: { url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
+          deepseek: { url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-flash' },
           openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', model: (localStorage.getItem('baheth_or_model') || '').trim() || 'google/gemini-2.5-flash-lite' }
         };
         const cfg = endpoints[engine];
         let contentPayload = promptText;
-        if (imageDataUrls.length > 0 && engine !== 'deepseek') {
+        if (imageDataUrls.length > 0) {
           contentPayload = [{ type: 'text', text: promptText }];
           imageDataUrls.forEach(img => contentPayload.push({ type: 'image_url', image_url: (engine === 'mistral' ? img : { url: img }) }));
         }
-        const res = await fetchT(cfg.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify(Object.assign({ model: cfg.model, messages: [{ role: 'user', content: contentPayload }] }, engine === 'openrouter' ? { max_tokens: 6000 } : {}))
-        });
-        const data = await apiJson(res);
+        const post = async (model) => {
+          const res = await fetchT(cfg.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+            body: JSON.stringify(Object.assign({ model, messages: [{ role: 'user', content: contentPayload }] }, engine === 'openrouter' ? { max_tokens: 6000 } : {}))
+          });
+          return await apiJson(res);
+        };
+        let data;
+        try { data = await post(cfg.model); }
+        catch (e1) {
+          const m1 = ((e1 && e1.message) || '');
+          if (engine === 'deepseek' && /model/i.test(m1) && /not exist|not found|invalid|unsupported|deprecated|retired/i.test(m1)) data = await post('deepseek-v4-flash');
+          else throw e1;
+        }
         return data?.choices?.[0]?.message?.content || '';
       }
 
@@ -1762,7 +1886,7 @@
       for (let g = 0; g < todo.length && !stopped; g += groupSize) {
         if (await ctlGate(octl)) { stopped = true; break; }
         const group = todo.slice(g, g + groupSize);
-        showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')' + (useOffline ? ' - OCR مدمج' : ''), Math.round(g / todo.length * 100));
+        showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')' + (useOffline ? ' - OCR مدمج' : ' - عبر ' + (ENGINE_NAMES[prefEngine('ocr')] || '')), Math.round(g / todo.length * 100));
         if (!useOffline) {
           try {
             const parts = await withQuotaRetry(() => runOcrOnPages(group.map(p => p.image), prefEngine('ocr')));
@@ -2273,9 +2397,21 @@
     low: { n: 'نغمة منخفضة', notes: [{ f: 330, s: 0, d: 0.12, v: 0.32 }, { f: 440, s: 0.1, d: 0.16, v: 0.32 }] },
     double: { n: 'نقرتان', notes: [{ f: 800, s: 0, d: 0.05, v: 0.3 }, { f: 800, s: 0.13, d: 0.05, v: 0.3 }] },
     tick: { n: 'نقرة خفيفة جداً', notes: [{ f: 520, s: 0, d: 0.05, v: 0.14 }] },
+    sweepUp: { n: 'صعود ناعم (ثلاث نغمات منخفضة)', notes: [{ f: 392, s: 0, d: 0.1, v: 0.22 }, { f: 494, s: 0.09, d: 0.1, v: 0.22 }, { f: 587, s: 0.18, d: 0.16, v: 0.22 }] },
+    sweepDown: { n: 'هبوط ناعم (ثلاث نغمات)', notes: [{ f: 587, s: 0, d: 0.1, v: 0.22 }, { f: 494, s: 0.09, d: 0.1, v: 0.22 }, { f: 392, s: 0.18, d: 0.18, v: 0.22 }] },
+    marimba: { n: 'ماريمبا (أربع نغمات خفيفة)', notes: [{ f: 523, s: 0, d: 0.09, v: 0.24 }, { f: 659, s: 0.08, d: 0.09, v: 0.24 }, { f: 784, s: 0.16, d: 0.09, v: 0.24 }, { f: 1047, s: 0.24, d: 0.2, v: 0.24 }] },
+    harp: { n: 'قيثارة هادئة', notes: [{ f: 392, s: 0, d: 0.25, v: 0.2 }, { f: 494, s: 0.08, d: 0.25, v: 0.2 }, { f: 587, s: 0.16, d: 0.25, v: 0.2 }, { f: 784, s: 0.24, d: 0.35, v: 0.2 }] },
+    glass: { n: 'زجاج ناعم', notes: [{ f: 1175, s: 0, d: 0.3, v: 0.18 }, { f: 1760, s: 0.06, d: 0.3, v: 0.1 }] },
+    wood: { n: 'نقرة خشب منخفضة', notes: [{ f: 260, s: 0, d: 0.07, v: 0.3 }, { f: 330, s: 0.09, d: 0.07, v: 0.3 }] },
+    soft2: { n: 'نغمتان منخفضتان متقاربتان', notes: [{ f: 294, s: 0, d: 0.12, v: 0.26 }, { f: 392, s: 0.12, d: 0.18, v: 0.26 }] },
+    warn: { n: 'تنبيه هادئ (نغمة هابطة منخفضة)', notes: [{ f: 440, s: 0, d: 0.14, v: 0.26 }, { f: 330, s: 0.15, d: 0.14, v: 0.26 }, { f: 262, s: 0.3, d: 0.2, v: 0.26 }] },
     none: { n: 'بدون صوت', notes: [] }
   };
-  const DEFAULTS = { send: 'rise', receive: 'fall', tick: 'tick' };
+  const EV_KINDS = { dlStart: 'صوت بدء تحميل الملف', dlEnd: 'صوت انتهاء تحميل الملف', ocrStart: 'صوت بدء استخراج النص', ocrEnd: 'صوت انتهاء استخراج النص', trStart: 'صوت بدء الترجمة', trEnd: 'صوت انتهاء الترجمة', evErr: 'صوت تعذر أو توقف العملية' };
+  const DEFAULTS = { send: 'rise', receive: 'fall', tick: 'tick', dlStart: 'sweepUp', dlEnd: 'chime', ocrStart: 'soft2', ocrEnd: 'marimba', trStart: 'glass', trEnd: 'harp', evErr: 'warn' };
+  const KIND_NAMES = Object.assign({ send: 'صوت الإرسال', receive: 'صوت وصول الإجابة', tick: 'صوت الانتظار' }, EV_KINDS);
+  const KIND_EL = { send: 'sfxSend', receive: 'sfxReceive', tick: 'sfxTick' };
+  Object.keys(EV_KINDS).forEach((k) => { KIND_EL[k] = 'sfx_' + k; });
   function sfxLevel() { const v = parseFloat(localStorage.getItem('baheth_sfx_vol') || '0.4'); return v >= 0.05 && v <= 1 ? v : 0.4; }
   function sfxChoice(kind) { const c = localStorage.getItem('baheth_sfx_' + kind); return CATALOG[c] ? c : DEFAULTS[kind]; }
 
@@ -2362,14 +2498,19 @@
     if (localStorage.getItem('baheth_chat_sounds') === 'false') return;
     playSfx(sfxChoice(kind));
   };
+  window.evSound = function (kind) {
+    if (localStorage.getItem('baheth_event_sounds') === 'false') return;
+    try { unlockAudio(); } catch (_) {}
+    playSfx(sfxChoice(kind));
+  };
   window.sfxPreview = function (kind) {
     unlockAudio();
     playSfx(sfxChoice(kind));
-    announce('تجربة ' + (kind === 'send' ? 'صوت الإرسال' : kind === 'receive' ? 'صوت وصول الإجابة' : 'صوت الانتظار') + ': ' + CATALOG[sfxChoice(kind)].n);
+    announce('تجربة ' + (KIND_NAMES[kind] || kind) + ': ' + CATALOG[sfxChoice(kind)].n);
   };
   window.sfxSave = function (kind) {
-    ['send', 'receive', 'tick'].forEach((k) => {
-      const el = $(k === 'send' ? 'sfxSend' : k === 'receive' ? 'sfxReceive' : 'sfxTick');
+    Object.keys(KIND_EL).forEach((k) => {
+      const el = $(KIND_EL[k]);
       if (el && el.value) localStorage.setItem('baheth_sfx_' + k, el.value);
     });
     const v = $('sfxVol');
@@ -2377,7 +2518,11 @@
     if (kind) { unlockAudio(); playSfx(sfxChoice(kind)); }
   };
   function initSfxUi() {
-    [['send', 'sfxSend'], ['receive', 'sfxReceive'], ['tick', 'sfxTick']].forEach((p) => {
+    const box = $('eventSfxBox');
+    if (box && !box.children.length) {
+      box.innerHTML = Object.keys(EV_KINDS).map((k) => '<div class="space-y-1"><label for="sfx_' + k + '" class="text-[11px] font-bold text-slate-300">' + EV_KINDS[k] + '</label><div class="flex gap-2"><select id="sfx_' + k + '" onchange="sfxSave(\'' + k + '\')" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"></select><button type="button" onclick="sfxPreview(\'' + k + '\')" aria-label="تجربة ' + EV_KINDS[k] + '" class="px-3 rounded-xl bg-slate-800 border border-slate-600 font-bold text-xs text-emerald-300">▶️ تجربة</button></div></div>').join('');
+    }
+    Object.keys(KIND_EL).map((k) => [k, KIND_EL[k]]).forEach((p) => {
       const el = $(p[1]); if (!el) return;
       el.innerHTML = Object.keys(CATALOG).map((id) => '<option value="' + id + '">' + CATALOG[id].n + '</option>').join('');
       el.value = sfxChoice(p[0]);
