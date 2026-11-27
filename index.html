@@ -49,7 +49,6 @@
   <div id="srAlert" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
   <div id="skipLinks">
     <button type="button" class="skip-link" onclick="a11yGoto('input')">انتقل إلى مربع كتابة السؤال</button>
-    <button type="button" class="skip-link" onclick="a11yGoto('last')">انتقل إلى آخر إجابة</button>
     <button type="button" class="skip-link" onclick="a11yGoto('nav')">انتقل إلى شريط التنقل</button>
   </div>
 
@@ -114,6 +113,8 @@
           <span class="text-base leading-none">🎙️</span>
           <span class="text-[9px] text-slate-300 mt-0.5">صوت</span>
         </button>
+
+        <button type="button" class="skip-link" onclick="a11yGoto('last')">انتقل إلى آخر إجابة</button>
 
         <div class="flex-1 bg-slate-900 border border-slate-700 rounded-2xl px-3 py-2 flex items-center min-h-[44px]">
           <textarea id="userInput" aria-label="اكتب سؤالك هنا" rows="1" placeholder="اكتب سؤالك هنا..." class="w-full bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none resize-none max-h-24 leading-relaxed" oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
@@ -269,6 +270,29 @@
           <p class="text-[10px] text-slate-400">نغمة قصيرة عند إرسال سؤال وعند وصول الإجابة</p>
         </div>
         <input type="checkbox" id="chatSoundsToggle" checked onchange="saveToggles()" class="w-5 h-5 accent-emerald-500" />
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+      <p class="text-xs font-bold text-white">صوت قراءة الإجابات</p>
+      <div class="space-y-1">
+        <label for="voiceSelect" class="text-[11px] font-bold text-slate-300">الصوت</label>
+        <select id="voiceSelect" onchange="saveTtsSettings()" onfocus="refreshTtsVoices()" aria-label="اختيار صوت قراءة الإجابات" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+          <option value="">الافتراضي للنظام</option>
+        </select>
+        <p class="text-[10px] text-slate-400 leading-relaxed">يعرض الأصوات المثبتة على جهازك، ومنها أصوات أبل وأي أصوات أخرى. لإضافة أصوات عربية أفضل على الآيفون: الإعدادات، ثم تسهيلات الاستخدام، ثم المحتوى المنطوق، ثم الأصوات.</p>
+      </div>
+      <div class="space-y-1">
+        <label for="ttsRate" class="text-[11px] font-bold text-slate-300">سرعة القراءة: <span id="ttsRateVal">1x</span></label>
+        <input type="range" id="ttsRate" min="0.5" max="2" step="0.1" value="1" oninput="saveTtsSettings()" class="w-full accent-emerald-500" />
+      </div>
+      <div class="space-y-1">
+        <label for="ttsVolume" class="text-[11px] font-bold text-slate-300">مستوى صوت القراءة: <span id="ttsVolumeVal">100٪</span></label>
+        <input type="range" id="ttsVolume" min="0.1" max="1" step="0.05" value="1" oninput="saveTtsSettings()" class="w-full accent-emerald-500" />
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="testVoice()" class="flex-1 py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-emerald-300 transition">▶️ تجربة الصوت</button>
+        <button type="button" onclick="stopSpeaking()" class="flex-1 py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-red-300 transition">⏹ إيقاف القراءة</button>
       </div>
     </div>
   </section>
@@ -457,6 +481,15 @@
     document.getElementById('autoSpeakToggle').checked = localStorage.getItem('baheth_autospeak') !== 'false';
     document.getElementById('strictModeToggle').checked = localStorage.getItem('baheth_strict') !== 'false';
     document.getElementById('chatSoundsToggle').checked = localStorage.getItem('baheth_chat_sounds') !== 'false';
+    const ttsRateEl = document.getElementById('ttsRate'), ttsVolEl = document.getElementById('ttsVolume');
+    if (ttsRateEl) {
+      ttsRateEl.value = localStorage.getItem('baheth_tts_rate') || '1';
+      const rv = document.getElementById('ttsRateVal'); if (rv) rv.textContent = ttsRateEl.value + 'x';
+    }
+    if (ttsVolEl) {
+      ttsVolEl.value = localStorage.getItem('baheth_tts_volume') || '1';
+      const vv = document.getElementById('ttsVolumeVal'); if (vv) vv.textContent = Math.round(parseFloat(ttsVolEl.value) * 100) + '٪';
+    }
 
     function prefEngine(task) {
       const p = (task === 'ocr' && ocrEngine !== 'auto') ? ocrEngine : activeEngine;
@@ -1707,31 +1740,6 @@
       }
     }
 
-    let chatAudioCtx = null;
-    function chatSoundsOn() { return localStorage.getItem('baheth_chat_sounds') !== 'false'; }
-    function chatSound(kind) {
-      if (!chatSoundsOn()) return;
-      try {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        chatAudioCtx = chatAudioCtx || new AC();
-        if (chatAudioCtx.state === 'suspended') chatAudioCtx.resume();
-        const t0 = chatAudioCtx.currentTime;
-        const play = (f0, f1, at, dur, vol) => {
-          const o = chatAudioCtx.createOscillator(), g = chatAudioCtx.createGain();
-          o.type = 'sine';
-          o.frequency.setValueAtTime(f0, t0 + at);
-          if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0 + at + dur);
-          g.gain.setValueAtTime(vol, t0 + at);
-          g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
-          o.connect(g); g.connect(chatAudioCtx.destination);
-          o.start(t0 + at); o.stop(t0 + at + dur + 0.02);
-        };
-        if (kind === 'send') play(520, 740, 0, 0.09, 0.08);          // نغمة صاعدة قصيرة عند الإرسال
-        else { play(880, 0, 0, 0.08, 0.07); play(660, 0, 0.09, 0.15, 0.07); } // نغمتان عند وصول الإجابة
-      } catch (_) {}
-    }
-
     let recognition = null, isRecording = false, usedVoiceInput = false;
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1764,13 +1772,67 @@
       }
     }
 
+    let ttsVoices = [], ttsVoiceSig = '';
+    function refreshTtsVoices() {
+      if (!('speechSynthesis' in window)) return;
+      const list = window.speechSynthesis.getVoices() || [];
+      const sig = list.map((v) => v.name + '|' + v.lang).join('~');
+      const sel = document.getElementById('voiceSelect');
+      if (sig === ttsVoiceSig && sel && sel.options.length > 0) { ttsVoices = list; return; }
+      ttsVoices = list; ttsVoiceSig = sig;
+      if (!sel) return;
+      const saved = localStorage.getItem('baheth_tts_voice') || '';
+      const isAr = (v) => (v.lang || '').toLowerCase().replace('_', '-').indexOf('ar') === 0;
+      const ar = ttsVoices.filter(isAr), rest = ttsVoices.filter((v) => !isAr(v));
+      const opt = (v) => {
+        const name = String(v.name).replace(/"/g, '');
+        return '<option value="' + escapeHtml(name) + '"' + (name === saved ? ' selected' : '') + '>' + escapeHtml(name + ' (' + v.lang + ')') + '</option>';
+      };
+      sel.innerHTML = '<option value="">الافتراضي للنظام</option>' +
+        (ar.length ? '<optgroup label="أصوات عربية">' + ar.map(opt).join('') + '</optgroup>' : '') +
+        (rest.length ? '<optgroup label="أصوات أخرى">' + rest.map(opt).join('') + '</optgroup>' : '');
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = refreshTtsVoices;
+    }
+    function applyTtsSettings(u) {
+      u.lang = 'ar-SA';
+      const r = parseFloat(localStorage.getItem('baheth_tts_rate') || '1');
+      if (r >= 0.5 && r <= 2) u.rate = r;
+      const vol = parseFloat(localStorage.getItem('baheth_tts_volume') || '1');
+      if (vol >= 0 && vol <= 1) u.volume = vol;
+      const vn = localStorage.getItem('baheth_tts_voice') || '';
+      if (vn) {
+        const list = ttsVoices.length ? ttsVoices : (window.speechSynthesis.getVoices() || []);
+        const voice = list.find((x) => x.name === vn);
+        if (voice) { u.voice = voice; u.lang = voice.lang; }
+      }
+      return u;
+    }
     function speakText(id) {
       const el = document.getElementById(id);
       if (!el || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(el.querySelector('.msg-body').innerText);
-      u.lang = 'ar-SA';
+      const u = applyTtsSettings(new SpeechSynthesisUtterance(el.querySelector('.msg-body').innerText));
       window.speechSynthesis.speak(u);
+    }
+    function stopSpeaking(silent) {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      if (!silent && typeof announce === 'function') announce('توقفت القراءة الصوتية');
+    }
+    function testVoice() {
+      if (!('speechSynthesis' in window)) { alert('القراءة الصوتية غير مدعومة على هذا الجهاز.'); return; }
+      saveTtsSettings();
+      window.speechSynthesis.cancel();
+      const u = applyTtsSettings(new SpeechSynthesisUtterance('هذا اختبار لصوت القراءة في تطبيق باحث. يمكنك تغيير الصوت والسرعة ومستوى الصوت من هذه الإعدادات.'));
+      window.speechSynthesis.speak(u);
+    }
+    function saveTtsSettings() {
+      const vs = document.getElementById('voiceSelect');
+      if (vs && (vs.value || vs.options.length > 1)) localStorage.setItem('baheth_tts_voice', vs.value);
+      const r = document.getElementById('ttsRate'), v = document.getElementById('ttsVolume');
+      if (r) { localStorage.setItem('baheth_tts_rate', r.value); const rv = document.getElementById('ttsRateVal'); if (rv) rv.textContent = r.value + 'x'; }
+      if (v) { localStorage.setItem('baheth_tts_volume', v.value); const vv = document.getElementById('ttsVolumeVal'); if (vv) vv.textContent = Math.round(parseFloat(v.value) * 100) + '٪'; }
     }
 
     function handleKey(e) {
@@ -1927,7 +1989,10 @@
         pagesHtml +
         '<div class="pt-2 border-t border-slate-800 flex items-center justify-between">' +
           '<button type="button" onclick="copyText(\'' + id + '\')" class="text-xs text-slate-300 active:text-white flex items-center gap-1 bg-slate-800 px-3.5 py-2.5 min-h-[44px] rounded-lg">📋 نسخ</button>' +
-          '<button type="button" onclick="speakText(\'' + id + '\')" class="text-xs text-emerald-400 flex items-center gap-1 bg-slate-800 px-3.5 py-2.5 min-h-[44px] rounded-lg active:scale-95">🔊 استماع</button>' +
+          '<div class="flex items-center gap-1.5">' +
+          '<button type="button" aria-label="استماع إلى الإجابة صوتياً" onclick="speakText(\'' + id + '\')" class="text-xs text-emerald-400 flex items-center gap-1 bg-slate-800 px-3.5 py-2.5 min-h-[44px] rounded-lg active:scale-95">🔊 استماع</button>' +
+          '<button type="button" aria-label="إيقاف القراءة الصوتية" onclick="stopSpeaking()" class="text-xs text-red-300 flex items-center gap-1 bg-slate-800 px-3.5 py-2.5 min-h-[44px] rounded-lg active:scale-95">⏹ إيقاف</button>' +
+          '</div>' +
         '</div>';
 
       document.getElementById('chatContainer').scrollTop = document.getElementById('chatContainer').scrollHeight;
@@ -1999,8 +2064,8 @@
       for (let i = 0; i < len && s0 + i < N; i++) {
         const t = i / sr;
         const env = (i < att ? i / att : 1) * Math.pow(1 - i / len, 1.5);
-        const v = (Math.sin(2 * Math.PI * n.f * t) + 0.3 * Math.sin(4 * Math.PI * n.f * t)) * n.vol * env;
-        pcm[s0 + i] = Math.max(-32767, Math.min(32767, pcm[s0 + i] + Math.round(v * 32767 / 1.3)));
+        const v = Math.sin(2 * Math.PI * n.f * t) * n.vol * env;
+        pcm[s0 + i] = Math.max(-32767, Math.min(32767, pcm[s0 + i] + Math.round(v * 32767)));
       }
     });
     const buf = new ArrayBuffer(44 + N * 2), dv = new DataView(buf);
@@ -2013,12 +2078,12 @@
     return { notes, url: URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })) };
   }
   const SFX = {
-    // إرسال: نغمتان صاعدتان سريعتان
-    send: makeWav([{ f: 660, start: 0, dur: 0.12, vol: 0.9 }, { f: 990, start: 0.1, dur: 0.18, vol: 0.9 }]),
-    // وصول الرد: ثلاث نغمات صاعدة مثل جرس واضح
-    receive: makeWav([{ f: 784, start: 0, dur: 0.24, vol: 0.95 }, { f: 988, start: 0.17, dur: 0.24, vol: 0.95 }, { f: 1319, start: 0.34, dur: 0.5, vol: 0.95 }]),
-    // نقرة خفيفة أثناء الانتظار
-    tick: makeWav([{ f: 520, start: 0, dur: 0.06, vol: 0.35 }])
+    // إرسال: نغمة صاعدة قصيرة وهادئة (مثل النغمة القديمة)
+    send: makeWav([{ f: 520, start: 0, dur: 0.09, vol: 0.12 }, { f: 740, start: 0.07, dur: 0.1, vol: 0.12 }]),
+    // وصول الرد: نغمتان هادئتان (مثل النغمة القديمة)
+    receive: makeWav([{ f: 880, start: 0, dur: 0.09, vol: 0.11 }, { f: 660, start: 0.09, dur: 0.16, vol: 0.11 }]),
+    // نقرة خفيفة جداً أثناء الانتظار
+    tick: makeWav([{ f: 520, start: 0, dur: 0.05, vol: 0.05 }])
   };
   const silentUrl = makeWav([{ f: 100, start: 0, dur: 0.05, vol: 0.0 }]).url;
   let sfxEl = null, ctx = null, unlocked = false;
@@ -2049,7 +2114,7 @@
         const o = c.createOscillator(), g = c.createGain();
         o.type = 'sine'; o.frequency.value = n.f;
         g.gain.setValueAtTime(0.0001, t0 + n.start);
-        g.gain.exponentialRampToValueAtTime(n.vol * 0.8, t0 + n.start + 0.01);
+        g.gain.exponentialRampToValueAtTime(n.vol, t0 + n.start + 0.01);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + n.start + n.dur);
         o.connect(g); g.connect(c.destination);
         o.start(t0 + n.start); o.stop(t0 + n.start + n.dur + 0.03);
@@ -2298,6 +2363,7 @@
   }).observe(document.body, { childList: true, subtree: true });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupStatic); else setupStatic();
+  refreshTtsVoices();
 })();
 </script>
 </body>
