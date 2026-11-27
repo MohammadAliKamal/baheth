@@ -472,6 +472,7 @@
     const imgKey = (id, n) => id + '|' + n;
     const imgRange = (id) => IDBKeyRange.bound(id + '|', id + '|\uffff');
 
+    let dbOpening = null;
     function initDB() {
       if (dbOpening) return dbOpening;
       dbOpening = new Promise((resolve, reject) => {
