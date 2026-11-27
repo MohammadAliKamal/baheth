@@ -473,8 +473,10 @@
     const imgRange = (id) => IDBKeyRange.bound(id + '|', id + '|\uffff');
 
     function initDB() {
-      return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, 2);
+      if (dbOpening) return dbOpening;
+      dbOpening = new Promise((resolve, reject) => {
+        let req;
+        try { req = indexedDB.open(DB_NAME, 2); } catch (err) { dbOpening = null; reject(err); return; }
         req.onupgradeneeded = (e) => {
           const database = e.target.result;
           if (!database.objectStoreNames.contains(STORE_NAME)) {
@@ -484,47 +486,78 @@
             database.createObjectStore(IMG_STORE, { keyPath: 'k' });
           }
         };
-        req.onsuccess = (e) => { db = e.target.result; resolve(db); };
-        req.onerror = () => reject(req.error);
+        req.onblocked = () => { try { console.warn('IDB open blocked by another tab'); } catch (_) {} };
+        req.onsuccess = (e) => {
+          const d = e.target.result;
+          db = d;
+          // Another context wants to upgrade/delete, or the browser closed us: drop the handle so the next call reopens.
+          d.onversionchange = () => { try { d.close(); } catch (_) {} if (db === d) db = null; };
+          d.onclose = () => { if (db === d) db = null; };
+          dbOpening = null;
+          resolve(d);
+        };
+        req.onerror = () => { dbOpening = null; reject(req.error || new Error('تعذر فتح قاعدة البيانات')); };
       });
+      return dbOpening;
+    }
+    const ensureDb = async () => { if (db) return db; return initDB(); };
+    const isClosingErr = (err) => !!err && (err.name === 'InvalidStateError' || err.name === 'NotFoundError' || /closing|closed/i.test(String(err.message || err)));
+    // Run fn(db) and, if the connection is closing/closed, reopen and retry (up to 3 times).
+    async function withDb(fn) {
+      let lastErr;
+      for (let i = 0; i < 4; i++) {
+        try {
+          const d = await ensureDb();
+          return await fn(d);
+        } catch (err) {
+          lastErr = err;
+          if (!isClosingErr(err) || i === 3) break;
+          try { if (db) db.close(); } catch (_) {}
+          db = null; dbOpening = null;
+          await new Promise(r => setTimeout(r, 150 * (i + 1)));
+        }
+      }
+      throw lastErr;
     }
 
     // Page images live in their own per-page records (small writes) instead of one
     // giant book record: a single 40MB+ structured-clone write fails on iOS Safari
     // with "internal error in the Indexed Database server".
-    const dbGetAll = () => new Promise(res => {
-      let req;
-      try { req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll(); } catch (_) { res([]); return; }
-      req.onerror = () => res([]);
-      req.onsuccess = async () => {
-        const list = req.result || [];
-        for (const src of list) {
-          if (!Array.isArray(src.pages)) continue;
-          const need = src.pages.some(p => p.hasImg && !p.image);
-          if (need) {
-            try {
-              const imgs = await new Promise((r2, j2) => {
-                const q = db.transaction(IMG_STORE, 'readonly').objectStore(IMG_STORE).getAll(imgRange(src.id));
-                q.onsuccess = () => r2(q.result || []); q.onerror = () => j2(q.error);
-              });
-              const m = new Map(imgs.map(x => [x.k, x.image]));
-              src.pages.forEach(p => { if (p.hasImg && !p.image) { const v = m.get(imgKey(src.id, p.pageNum)); if (v) p.image = v; } });
-            } catch (_) {}
-          }
-          src.pages.forEach(p => { if (p.image && p.hasImg) savedImgs.add(imgKey(src.id, p.pageNum)); });
+    const dbGetAll = async () => {
+      let list;
+      try {
+        list = await withDb(d => new Promise((res, rej) => {
+          const req = d.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll();
+          req.onerror = () => rej(req.error);
+          req.onsuccess = () => res(req.result || []);
+        }));
+      } catch (_) { return []; }
+      for (const src of list) {
+        if (!Array.isArray(src.pages)) continue;
+        const need = src.pages.some(p => p.hasImg && !p.image);
+        if (need) {
+          try {
+            const imgs = await withDb(d => new Promise((r2, j2) => {
+              const q = d.transaction(IMG_STORE, 'readonly').objectStore(IMG_STORE).getAll(imgRange(src.id));
+              q.onsuccess = () => r2(q.result || []); q.onerror = () => j2(q.error);
+            }));
+            const m = new Map(imgs.map(x => [x.k, x.image]));
+            src.pages.forEach(p => { if (p.hasImg && !p.image) { const v = m.get(imgKey(src.id, p.pageNum)); if (v) p.image = v; } });
+          } catch (_) {}
         }
-        res(list);
-      };
-    });
+        src.pages.forEach(p => { if (p.image && p.hasImg) savedImgs.add(imgKey(src.id, p.pageNum)); });
+      }
+      return list;
+    };
 
-    const dbTx = (stores, fn) => new Promise((res, rej) => {
+    const dbTx = (stores, fn) => withDb(d => new Promise((res, rej) => {
       let tx;
-      try { tx = db.transaction(stores, 'readwrite'); fn(tx); }
+      try { tx = d.transaction(stores, 'readwrite'); fn(tx); }
       catch (err) { rej(err); return; }
       tx.oncomplete = () => res();
       tx.onerror = () => rej(tx.error || new Error('خطأ كتابة في التخزين'));
       tx.onabort = () => rej(tx.error || new Error('أُلغيت الكتابة في التخزين (غالباً المساحة ممتلئة)'));
-    });
+    }));
 
     const dbPut = async (item) => {
       if (item && Array.isArray(item.pages) && item.pages.some(p => p && p.image)) {
@@ -540,16 +573,15 @@
       return dbTx([STORE_NAME], tx => { tx.objectStore(STORE_NAME).put(item); });
     };
 
-    const dbDelete = (id) => new Promise(res => {
+    const dbDelete = async (id) => {
       for (const k of Array.from(savedImgs)) if (k.startsWith(id + '|')) savedImgs.delete(k);
       try {
-        const tx = db.transaction([STORE_NAME, IMG_STORE], 'readwrite');
-        tx.objectStore(STORE_NAME).delete(id);
-        tx.objectStore(IMG_STORE).delete(imgRange(id));
-        tx.oncomplete = () => res();
-        tx.onerror = () => res(); tx.onabort = () => res();
-      } catch (_) { res(); }
-    });
+        await dbTx([STORE_NAME, IMG_STORE], tx => {
+          tx.objectStore(STORE_NAME).delete(id);
+          tx.objectStore(IMG_STORE).delete(imgRange(id));
+        });
+      } catch (_) {}
+    };
 
     function makeCardPreviewImage(title, pageNum, snippet, badgeColor = '#10b981') {
       const canvas = document.createElement('canvas');
