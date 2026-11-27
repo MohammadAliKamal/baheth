@@ -69,6 +69,7 @@
         <option value="mistral">🌪️ Mistral</option>
         <option value="grok">⚡ Grok</option>
         <option value="deepseek">👁️ DeepSeek OCR</option>
+        <option value="openrouter">🌐 OpenRouter</option>
       </select>
     </div>
   </header>
@@ -154,6 +155,8 @@
           <option value="claude">Claude Vision OCR</option>
           <option value="mistral">Mistral Pixtral OCR</option>
           <option value="grok">Grok Vision OCR</option>
+          <option value="openrouter">OpenRouter Vision OCR</option>
+          <option value="offline">OCR المدمج بدون مفاتيح (جودة أقل)</option>
         </select>
       </div>
 
@@ -236,11 +239,18 @@
         <textarea rows="2" id="key-deepseek" placeholder="sk-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
       </div>
 
-      <button type="button" onclick="showDiagnostics()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-emerald-300 transition mb-2">📊 تشخيص المحركات (الطلبات والأخطاء ومن خدم كل مهمة)</button>
+      <div class="space-y-1">
+        <label class="text-[11px] font-bold text-pink-400">7. OpenRouter API Key (مفاتيحه طويلة، الصقه كاملاً)</label>
+        <textarea rows="3" id="key-openrouter" placeholder="sk-or-v1-..." dir="ltr" style="-webkit-text-security:disc;resize:vertical;word-break:break-all" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
+        <label for="orModel" class="text-[11px] font-bold text-slate-300">اسم نموذج OpenRouter (اتركه كما هو إن ما تعرف)</label>
+        <input type="text" id="orModel" value="google/gemini-2.5-flash-lite" dir="ltr" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+      </div>
+
+      <button type="button" onclick="showDiagnostics()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-emerald-300 transition mb-2">📊 تشخيص المحركات (لكل مفتاح: الطلبات والأخطاء ومن خدم كل مهمة)</button>
       <button type="button" onclick="testAllKeys()" class="w-full py-2.5 rounded-xl bg-slate-800 border border-slate-600 active:bg-slate-700 font-bold text-xs text-sky-300 transition">
         🔍 فحص المفاتيح (فحص خفيف لا يستهلك الحصة)
       </button>
-      <div id="keyTestResult" class="text-[11px] text-slate-200 leading-relaxed whitespace-pre-line select-text"></div>
+      <div id="keyTestResult" class="text-[11px] text-slate-200 leading-relaxed select-text"></div>
 
       <button type="button" onclick="saveAllSettings()" class="w-full py-2.5 rounded-xl bg-emerald-600 active:bg-emerald-500 font-bold text-xs text-white transition">
         💾 حفظ جميع المفاتيح والإعدادات
@@ -270,6 +280,30 @@
           <p class="text-[10px] text-slate-400">نغمة قصيرة عند إرسال سؤال وعند وصول الإجابة</p>
         </div>
         <input type="checkbox" id="chatSoundsToggle" checked onchange="saveToggles()" class="w-5 h-5 accent-emerald-500" />
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+      <p class="text-xs font-bold text-white">اختيار المؤثرات الصوتية</p>
+      <div class="space-y-1">
+        <label for="sfxSend" class="text-[11px] font-bold text-slate-300">صوت إرسال السؤال</label>
+        <div class="flex gap-2"><select id="sfxSend" onchange="sfxSave('send')" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"></select>
+        <button type="button" onclick="sfxPreview('send')" aria-label="تجربة صوت الإرسال" class="px-3 rounded-xl bg-slate-800 border border-slate-600 font-bold text-xs text-emerald-300">▶️ تجربة</button></div>
+      </div>
+      <div class="space-y-1">
+        <label for="sfxReceive" class="text-[11px] font-bold text-slate-300">صوت وصول الإجابة</label>
+        <div class="flex gap-2"><select id="sfxReceive" onchange="sfxSave('receive')" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"></select>
+        <button type="button" onclick="sfxPreview('receive')" aria-label="تجربة صوت وصول الإجابة" class="px-3 rounded-xl bg-slate-800 border border-slate-600 font-bold text-xs text-emerald-300">▶️ تجربة</button></div>
+      </div>
+      <div class="space-y-1">
+        <label for="sfxTick" class="text-[11px] font-bold text-slate-300">صوت الانتظار أثناء التفكير</label>
+        <div class="flex gap-2"><select id="sfxTick" onchange="sfxSave('tick')" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"></select>
+        <button type="button" onclick="sfxPreview('tick')" aria-label="تجربة صوت الانتظار" class="px-3 rounded-xl bg-slate-800 border border-slate-600 font-bold text-xs text-emerald-300">▶️ تجربة</button></div>
+      </div>
+      <div class="space-y-1">
+        <label for="sfxVol" class="text-[11px] font-bold text-slate-300">مستوى صوت المؤثرات: <span id="sfxVolVal">40٪</span></label>
+        <input type="range" id="sfxVol" min="0.1" max="1" step="0.05" value="0.4" oninput="sfxSave()" class="w-full accent-emerald-500" />
+        <p class="text-[10px] text-slate-400 leading-relaxed">إذا ما سمعت صوت وصول الإجابة ارفع المستوى وتأكد أن جوالك غير مكتوم وأن مستوى الصوت مرتفع. المؤثرات تعمل بعد أول لمسة للشاشة.</p>
       </div>
     </div>
 
@@ -466,7 +500,7 @@
       restoreLastChat();
     }
 
-    const ENGINES = ['gemini', 'openai', 'claude', 'mistral', 'grok', 'deepseek'];
+    const ENGINES = ['gemini', 'openai', 'claude', 'mistral', 'grok', 'deepseek', 'openrouter'];
     let keys = {};
     ENGINES.forEach(e => {
       keys[e] = localStorage.getItem('baheth_key_' + e) || (e === 'gemini' ? (localStorage.getItem('baheth_api_key') || '') : '');
@@ -474,6 +508,7 @@
       if (el) el.value = keys[e];
     });
 
+    { const om = document.getElementById('orModel'); if (om) om.value = localStorage.getItem('baheth_or_model') || 'google/gemini-2.5-flash-lite'; }
     let activeEngine = localStorage.getItem('baheth_active_engine') || 'gemini';
     let ocrEngine = localStorage.getItem('baheth_ocr_engine2') || 'auto';
     document.getElementById('activeEngineSelect').value = activeEngine;
@@ -507,23 +542,47 @@
 
     function cleanKey(k) { return String(k || '').replace(/[^\x21-\x7E]/g, '').replace(/^["'`]+|["'`]+$/g, ''); }
     function keyListFromText(t) { return Array.from(new Set(String(t || '').split(/[\s,،;؛]+/).map(cleanKey).filter(Boolean))); }
+    function guessEngine(k) {
+      if (/^sk-or-/.test(k)) return 'openrouter';
+      if (/^sk-ant-/.test(k)) return 'claude';
+      if (/^xai-/.test(k)) return 'grok';
+      if (/^AIza/.test(k)) return 'gemini';
+      return '';
+    }
+    function keyTag(k) { return k.length > 12 ? k.slice(0, 6) + '…' + k.slice(-4) : k.slice(0, 3) + '…'; }
     function saveKeysFromFields() {
+      const lists = {}, moved = [];
+      ENGINES.forEach(e => { lists[e] = keyListFromText(document.getElementById('key-' + e).value); });
+      ENGINES.forEach(e => {
+        lists[e] = lists[e].filter(k => {
+          const g = guessEngine(k);
+          if (g && g !== e && lists[g]) {
+            if (!lists[g].includes(k)) lists[g].push(k);
+            moved.push('المفتاح ' + keyTag(k) + ' كان في خانة ' + ENGINE_NAMES[e] + ' فنقلته لخانة ' + ENGINE_NAMES[g]);
+            return false;
+          }
+          return true;
+        });
+      });
       ENGINES.forEach(e => {
         const el = document.getElementById('key-' + e);
-        const val = keyListFromText(el.value).join('\n');
-        el.value = val; // تنظيف المحتوى المعروض من مسافات وعلامات زائدة
+        const val = lists[e].join('\n');
+        el.value = val;
         keys[e] = val;
         localStorage.setItem('baheth_key_' + e, val);
       });
+      const om = document.getElementById('orModel');
+      if (om) { om.value = om.value.replace(/\s+/g, ''); localStorage.setItem('baheth_or_model', om.value); }
+      return moved;
     }
 
     function saveAllSettings() {
-      saveKeysFromFields();
+      const movedKeys = saveKeysFromFields();
       saveToggles();
       const seen = {}, dups = [];
       ENGINES.forEach(e => keyList(e).forEach(k => { if (seen[k] && seen[k] !== e) dups.push(ENGINE_NAMES[seen[k]] + ' و' + ENGINE_NAMES[e]); seen[k] = e; }));
       const c = ENGINES.map(e => keyList(e).length ? (ENGINE_NAMES[e] + ': ' + keyList(e).length) : '').filter(Boolean).join('، ');
-      alert((dups.length ? '⚠️ انتبه: نفس المفتاح محفوظ تحت أكثر من محرك (' + Array.from(new Set(dups)).join('، ') + '). غالباً نُسخ بالغلط.\n\n' : '') + '✅ تم حفظ المفاتيح' + (c ? ' (' + c + ')' : ''));
+      alert((movedKeys.length ? '🔧 تم تصحيح مكان مفاتيح:\n' + movedKeys.join('\n') + '\n\n' : '') + (dups.length ? '⚠️ انتبه: نفس المفتاح محفوظ تحت أكثر من محرك (' + Array.from(new Set(dups)).join('، ') + '). غالباً نُسخ بالغلط.\n\n' : '') + '✅ تم حفظ المفاتيح' + (c ? ' (' + c + ')' : ''));
       switchTab('chat');
     }
 
@@ -533,7 +592,8 @@
       claude: { re: /^sk-ant-[\w-]{20,}$/, hint: 'مفاتيح Claude تبدأ بـ sk-ant-' },
       mistral: { re: /^[\w-]{24,}$/, hint: 'مفاتيح Mistral طولها عادة 32 حرفاً' },
       grok: { re: /^xai-[\w-]{20,}$/, hint: 'مفاتيح xAI تبدأ بـ xai-' },
-      deepseek: { re: /^sk-[\w-]{20,}$/, hint: 'مفاتيح DeepSeek تبدأ بـ sk-' }
+      deepseek: { re: /^sk-[\w-]{20,}$/, hint: 'مفاتيح DeepSeek تبدأ بـ sk-' },
+      openrouter: { re: /^sk-or-[\w.-]{20,}$/, hint: 'مفاتيح OpenRouter تبدأ بـ sk-or- وهي طويلة' }
     };
 
     async function validateKeyLight(engine, key) {
@@ -543,9 +603,20 @@
       else if (engine === 'mistral') { url = 'https://api.mistral.ai/v1/models'; headers['Authorization'] = 'Bearer ' + key; }
       else if (engine === 'grok') { url = 'https://api.x.ai/v1/models'; headers['Authorization'] = 'Bearer ' + key; }
       else if (engine === 'deepseek') { url = 'https://api.deepseek.com/models'; headers['Authorization'] = 'Bearer ' + key; }
+      else if (engine === 'openrouter') { url = 'https://openrouter.ai/api/v1/auth/key'; headers['Authorization'] = 'Bearer ' + key; }
       else if (engine === 'claude') { url = 'https://api.anthropic.com/v1/models'; headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; headers['anthropic-dangerous-direct-browser-access'] = 'true'; }
       const res = await fetchT(url, { headers }, 30000);
-      if (res.ok) return true;
+      if (res.ok) {
+        if (engine === 'openrouter') {
+          try {
+            const d = (await res.json()).data || {};
+            if (d.limit_remaining != null) return 'الرصيد المتبقي: ' + Number(d.limit_remaining).toFixed(2) + ' دولار';
+            if (d.is_free_tier) return 'حساب مجاني (بدون رصيد مدفوع)';
+            if (d.usage != null) return 'المصروف حتى الآن: ' + Number(d.usage).toFixed(2) + ' دولار';
+          } catch (_) {}
+        }
+        return true;
+      }
       let msg = '';
       try { const d = await res.json(); msg = (d.error && (typeof d.error === 'string' ? d.error : (d.error.message || d.error.type))) || d.message || ''; } catch (_) {}
       const err = new Error('HTTP ' + res.status + (msg ? ': ' + String(msg).slice(0, 120) : ''));
@@ -553,34 +624,69 @@
       throw err;
     }
 
+    function isBadKey(err) {
+      const st = err && err.status, m = ((err && err.message) || '').toLowerCase();
+      if (st === 401) return true;
+      if (st === 403 && !/region|location|country|territor/.test(m)) return true;
+      return /api key not valid|api_key_invalid|invalid api key|invalid_api_key|incorrect api key|unauthorized|no auth|user not found|key not found|authentication|http 401/.test(m);
+    }
+
     async function testAllKeys() {
-      saveKeysFromFields();
+      const moved = saveKeysFromFields();
       const out = document.getElementById('keyTestResult');
+      const esc = x => String(x == null ? '' : x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      out.removeAttribute('role'); out.setAttribute('aria-live', 'off'); out.setAttribute('aria-busy', 'true');
       out.textContent = '⏳ جاري الفحص (فحص خفيف لا يستهلك من حصة الأسئلة)...';
-      let lines = [];
-      for (const e of ENGINES) {
-        const list = keyList(e);
-        for (let i = 0; i < list.length; i++) {
-          const fmt = KEY_FORMATS[e];
-          const fmtWarn = fmt && !fmt.re.test(list[i]) ? ' ⚠️ شكله غير معتاد (' + fmt.hint + ')' : '';
-          let r;
-          try { await validateKeyLight(e, list[i]); r = '✅ يعمل'; }
-          catch (err) {
-            const m = (err && err.message) || String(err);
-            if (err.status === 401 || err.status === 403 || /api key|invalid|unauthorized|permission|incorrect/i.test(m)) r = '❌ غير صالح: انسخه من جديد من موقع المحرك';
-            else if (err.status === 402) r = '💳 المفتاح مقبول لكن الحساب يحتاج تفعيل اشتراك/فوترة';
-            else if (err.status === 429 || isQuotaError(err)) r = '⏳ المفتاح صحيح لكن حصته ممتلئة حالياً';
-            else r = '⚠️ ' + m.slice(0, 90);
-          }
-          const cd = keyCooldown[list[i]] && keyCooldown[list[i]] > Date.now()
-            ? ' — موقوف حتى ' + new Date(keyCooldown[list[i]]).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' })
-            : '';
-          const used = keyUsage[list[i]] && keyUsage[list[i]].d === new Date().toDateString() ? ' — طلبات اليوم: ' + keyUsage[list[i]].n : '';
-          lines.push((ENGINE_NAMES[e]) + ' - المفتاح ' + (i + 1) + ' (يبدأ بـ ' + list[i].slice(0, 4) + '…، طوله ' + list[i].length + '): ' + r + fmtWarn + cd + used);
-          out.textContent = lines.join('\n') + '\n⏳ ...';
+      const jobs = [];
+      ENGINES.forEach(e => { const l = keyList(e); l.forEach((k, i) => jobs.push({ e, k, i, n: l.length })); });
+      if (!jobs.length) { out.removeAttribute('aria-busy'); out.textContent = 'ما فيه مفاتيح مضافة.'; return; }
+      const results = await Promise.all(jobs.map(async j => {
+        const fmt = KEY_FORMATS[j.e];
+        const notes = [];
+        if (fmt && !fmt.re.test(j.k)) notes.push('⚠️ شكل المفتاح غير معتاد (' + fmt.hint + ')');
+        let st = 'ok', txt = '✅ يعمل', extra = '';
+        try {
+          const info = await validateKeyLight(j.e, j.k);
+          if (typeof info === 'string') extra = info;
+          if (keyCooldown[j.k]) { delete keyCooldown[j.k]; saveCooldowns(); }
+        } catch (err) {
+          const m = (err && err.message) || String(err);
+          if (isBadKey(err)) { st = 'bad'; txt = '❌ غير صالح: انسخه من جديد من موقع المحرك'; }
+          else if (err.status === 402) { st = 'billing'; txt = '💳 المفتاح مقبول لكن الحساب يحتاج رصيد أو تفعيل اشتراك'; }
+          else if (err.status === 429 || isQuotaError(err)) { st = 'quota'; txt = '⏳ المفتاح صحيح لكن حصته ممتلئة حالياً'; }
+          else { st = 'warn'; txt = '⚠️ ' + m.slice(0, 90); }
         }
-      }
-      out.textContent = lines.length ? lines.join('\n') : 'ما فيه مفاتيح مضافة.';
+        return Object.assign({}, j, { st, txt, extra, notes });
+      }));
+      const cnt = { ok: 0, bad: 0, billing: 0, quota: 0, warn: 0 };
+      results.forEach(r => cnt[r.st]++);
+      const summary = 'نتيجة الفحص: ' + results.length + ' مفتاح. ✅ يعمل: ' + cnt.ok + '، ❌ غير صالح: ' + cnt.bad + '، 💳 يحتاج رصيد: ' + cnt.billing + '، ⏳ حصة ممتلئة: ' + cnt.quota + '، ⚠️ أخرى: ' + cnt.warn + '.';
+      const todayStr = new Date().toDateString();
+      let h = '<div style="font-weight:700;margin-bottom:6px">' + esc(summary) + '</div>';
+      if (moved.length) h += '<div style="color:#fbbf24;margin-bottom:6px">🔧 ' + moved.map(esc).join('<br>') + '</div>';
+      ENGINES.forEach(e => {
+        const rs = results.filter(r => r.e === e);
+        if (!rs.length) return;
+        h += '<h3 style="font-weight:700;color:#6ee7b7;margin:10px 0 4px">' + esc(ENGINE_NAMES[e]) + ' (' + rs.length + (rs.length === 1 ? ' مفتاح' : ' مفاتيح') + ')</h3><ul style="list-style:none;padding:0;margin:0">';
+        rs.forEach(r => {
+          const u = keyUsage[r.k] && keyUsage[r.k].d === todayStr ? keyUsage[r.k].n : 0;
+          const cd = keyCooldown[r.k] && keyCooldown[r.k] > Date.now() ? new Date(keyCooldown[r.k]).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }) : '';
+          const row = (a, b) => '<div>' + a + ': ' + esc(b) + '</div>';
+          h += '<li style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px;margin-bottom:6px">' +
+            '<div style="font-weight:700">' + esc(ENGINE_NAMES[e]) + ' - المفتاح ' + (r.i + 1) + ' من ' + r.n + '</div>' +
+            row('الحالة', r.txt) + row('البصمة', keyTag(r.k) + ' (طوله ' + r.k.length + ' حرفاً)') +
+            (r.extra ? row('معلومات', r.extra) : '') +
+            r.notes.map(x => '<div>' + esc(x) + '</div>').join('') +
+            (cd ? row('الإيقاف المؤقت', 'موقوف حتى ' + cd) : '') +
+            row('طلبات اليوم', String(u)) + '</li>';
+        });
+        h += '</ul>';
+      });
+      out.innerHTML = h;
+      out.removeAttribute('aria-busy');
+      out.setAttribute('tabindex', '-1'); out.setAttribute('aria-label', 'نتائج فحص المفاتيح');
+      if (window.a11yAnnounce) window.a11yAnnounce(summary, true);
+      try { out.focus({ preventScroll: false }); } catch (_) {}
     }
 
     function saveToggles() {
@@ -706,6 +812,7 @@
                 <span class="text-[10px] text-slate-400">${src.pages ? src.pages.length : 0} صفحة</span>
                 ${(() => { const st = sourceStats(src); return '<span class="text-[10px] px-1.5 py-0.5 rounded ' + (st.text === 0 ? 'bg-red-500/15 text-red-300' : (st.empty ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')) + '">نص: ' + st.text + '/' + st.total + '</span>'; })()}
                 ${src.ocrIncomplete ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">📝 OCR غير مكتمل</span>' : ''}
+                ${(src.pages || []).some(p => p.ocrLow) ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">🔸 فيه صفحات OCR مدمج (جودة أقل)</span>' : ''}
               </div>
             </div>
           </div>
@@ -1200,17 +1307,29 @@
       return r.text;
     }
 
-    const ENGINE_NAMES = { gemini: 'Gemini', openai: 'ChatGPT', claude: 'Claude', mistral: 'Mistral', grok: 'Grok', deepseek: 'DeepSeek' };
+    const ENGINE_NAMES = { gemini: 'Gemini', openai: 'ChatGPT', claude: 'Claude', mistral: 'Mistral', grok: 'Grok', deepseek: 'DeepSeek', openrouter: 'OpenRouter' };
 
     function isQuotaError(err) {
       const m = ((err && err.message) || String(err || '')).toLowerCase();
-      return m.includes('quota') || m.includes('429') || m.includes('rate limit') || m.includes('resource has been exhausted') || m.includes('exceeded') || m.includes('too many requests');
+      return m.includes('quota') || m.includes('429') || m.includes('rate limit') || m.includes('resource has been exhausted') || m.includes('exceeded') || m.includes('too many requests') || (err && err.status === 402) || m.includes('http 402') || m.includes('insufficient') || m.includes('credits') || m.includes('payment required');
     }
 
-    let diag = { engines: {}, log: [] };
+    let diag = { engines: {}, log: [], offline: { pages: 0, fail: 0, lastErr: '', lastAt: 0 } };
     try { diag = JSON.parse(localStorage.getItem('baheth_diag') || '') || diag; } catch (_) {}
-    if (!diag.engines) diag.engines = {}; if (!diag.log) diag.log = [];
+    if (!diag.engines) diag.engines = {}; if (!diag.log) diag.log = []; if (!diag.offline) diag.offline = { pages: 0, fail: 0, lastErr: '', lastAt: 0 };
     function saveDiag() { try { localStorage.setItem('baheth_diag', JSON.stringify(diag)); } catch (_) {} }
+    let keyStats = {};
+    try { keyStats = JSON.parse(localStorage.getItem('baheth_key_stats') || '{}') || {}; } catch (_) { keyStats = {}; }
+    function saveKS() { try { localStorage.setItem('baheth_key_stats', JSON.stringify(keyStats)); } catch (_) {} }
+    function ksOf(k) { return keyStats[k] || (keyStats[k] = { req: 0, ok: 0, fail: 0, tasks: {}, lastErr: '', lastErrAt: 0, lastOkAt: 0, ev: [] }); }
+    function recKey(k, task, ok, msg) {
+      const st = ksOf(k); st.req++; if (ok) st.ok++; else st.fail++;
+      const t = st.tasks[task] || (st.tasks[task] = { ok: 0, fail: 0 }); if (ok) t.ok++; else t.fail++;
+      if (ok) st.lastOkAt = Date.now(); else { st.lastErr = String(msg || '').slice(0, 220); st.lastErrAt = Date.now(); }
+      st.ev.unshift({ t: Date.now(), task, ok, m: ok ? '' : String(msg || '').slice(0, 140) });
+      st.ev.length = Math.min(st.ev.length, 12);
+      saveKS();
+    }
     function diagEng(e) { return diag.engines[e] || (diag.engines[e] = { req: 0, ok: 0, fail: 0, lastErr: '', lastErrAt: 0, lastOkAt: 0 }); }
     const TASK_NAMES = { chat: 'دردشة', ocr: 'استخراج نص OCR', translate: 'ترجمة' };
     function stopErr(err) { return err && err.failedEngines ? !!err.allQuota : isQuotaError(err); }
@@ -1224,18 +1343,18 @@
       const failed = [], errs = [];
       let allQuota = true;
       for (const eng of order) {
+        const info = { pos: 0, tries: [] };
         try {
-          const text = await callUnifiedAI(eng, promptText, imageDataUrls);
+          const text = await callUnifiedAI(eng, promptText, imageDataUrls, task, info);
           if (text && text.trim()) {
-            diag.log.unshift({ t: Date.now(), task, pref: preferredEngine, served: eng, failed: errs.slice() });
+            diag.log.unshift({ t: Date.now(), task, pref: preferredEngine, served: eng, pos: info.pos, failed: errs.slice() });
             diag.log.length = Math.min(diag.log.length, 40); saveDiag();
             return { text, engine: eng, failed };
           }
-          errs.push({ e: eng, m: 'رد فارغ' }); failed.push(eng); allQuota = false;
-          const d = diagEng(eng); d.fail++; d.lastErr = 'رد فارغ'; d.lastErrAt = Date.now();
+          errs.push({ e: eng, m: 'رد فارغ', tries: info.tries }); failed.push(eng); allQuota = false;
         } catch (err) {
           const m = ((err && err.message) || String(err)).slice(0, 200);
-          errs.push({ e: eng, m }); failed.push(eng);
+          errs.push({ e: eng, m, tries: info.tries }); failed.push(eng);
           if (!isQuotaError(err)) allQuota = false;
         }
       }
@@ -1243,6 +1362,7 @@
       diag.log.length = Math.min(diag.log.length, 40); saveDiag();
       const err = new Error('فشلت كل المحركات (' + errs.map(x => (ENGINE_NAMES[x.e] || x.e) + ': ' + x.m.slice(0, 90)).join(' | ') + ')');
       err.failedEngines = failed; err.allQuota = allQuota;
+      err.hardQuota = allQuota && errs.every(x => /402|insufficient|credits|billing|per day|daily|payment/i.test(x.m));
       throw err;
     }
 
@@ -1252,42 +1372,92 @@
       ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(2,6,23,.96);overflow:auto;padding:calc(env(safe-area-inset-top) + 12px) 12px 24px;direction:rtl;color:#e2e8f0;font-size:12px';
       const fmt = t => t ? new Date(t).toLocaleString('ar', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) : '-';
       const esc = x => String(x == null ? '' : x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-      let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📊 تشخيص المحركات</b><button onclick="document.getElementById(\'diagOverlay\').remove()" style="background:#334155;border-radius:10px;padding:6px 14px;color:#fff;font-weight:700">إغلاق</button></div>';
-      h += '<div style="margin-bottom:10px;color:#94a3b8">محرك الدردشة والترجمة: <b style="color:#6ee7b7">' + esc(ENGINE_NAMES[activeEngine] || activeEngine) + '</b> | محرك OCR: <b style="color:#6ee7b7">' + (ocrEngine === 'auto' ? 'تلقائي (نفس محرك الدردشة)' : esc(ENGINE_NAMES[ocrEngine] || ocrEngine)) + '</b><br>إذا فشل المحرك المفضل ينتقل التطبيق تلقائياً لكل محرك له مفتاح.</div>';
+      const row = (a, b, col) => '<div' + (col ? ' style="color:' + col + '"' : '') + '>' + a + ': ' + b + '</div>';
       const todayStr = new Date().toDateString();
       const fmtClock = t => new Date(t).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' });
+      let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📊 تشخيص المحركات</b><button onclick="document.getElementById(\'diagOverlay\').remove()" style="background:#334155;border-radius:10px;padding:6px 14px;color:#fff;font-weight:700">إغلاق</button></div>';
+      h += '<div style="margin-bottom:10px;color:#94a3b8">محرك الدردشة والترجمة: <b style="color:#6ee7b7">' + esc(ENGINE_NAMES[activeEngine] || activeEngine) + '</b> | محرك OCR: <b style="color:#6ee7b7">' + (ocrEngine === 'auto' ? 'تلقائي (نفس محرك الدردشة)' : (ocrEngine === 'offline' ? 'المدمج' : esc(ENGINE_NAMES[ocrEngine] || ocrEngine))) + '</b><br>إذا فشل المحرك المفضل ينتقل التطبيق تلقائياً لكل محرك له مفتاح، وإذا خلصت كلها ينتقل لاستخراج النص المدمج (OCR).</div>';
+      h += '<h2 style="font-weight:700;font-size:14px;margin:8px 0">المحركات والمفاتيح (كل مفتاح لوحده)</h2>';
       ENGINES.forEach(e => {
-        const n = keyList(e).length, d = diag.engines[e] || { req: 0, ok: 0, fail: 0 };
-        if (!n && !d.req) return;
-        const cool = n && engineCooled(e);
-        h += '<div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:10px;margin-bottom:8px"><b>' + esc(ENGINE_NAMES[e]) + '</b> - مفاتيح: ' + n + (cool ? ' <span style="color:#fbbf24">(موقوف مؤقتاً)</span>' : '') +
-          '<br>طلبات: ' + (d.req || 0) + ' | نجح: ' + (d.ok || 0) + ' | فشل: ' + (d.fail || 0) + '<br>آخر نجاح: ' + fmt(d.lastOkAt) +
-          (d.lastErr ? '<br><span style="color:#fca5a5">آخر خطأ (' + fmt(d.lastErrAt) + '): ' + esc(d.lastErr) + '</span>' : '');
-        if (n) {
-          h += '<div style="margin-top:6px;border-top:1px dashed #1e293b;padding-top:6px;color:#94a3b8">جدولة الحصص:';
-          keyList(e).forEach((k, i) => {
-            const u = keyUsage[k] && keyUsage[k].d === todayStr ? keyUsage[k].n : 0;
-            const cd = keyCooldown[k] && keyCooldown[k] > Date.now() ? keyCooldown[k] : 0;
-            h += '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span>مفتاح ' + (i + 1) + ' (' + esc(k.slice(0, 4)) + '…' + esc(k.slice(-3)) + ')</span>' +
-              (cd ? '<span style="color:#fbbf24">موقوف حتى ' + fmtClock(cd) + '</span>' : '<span style="color:#6ee7b7">جاهز</span>') +
-              '<span>اليوم: ' + u + ' طلب</span></div>';
-          });
-          if (e === 'gemini') h += '<div style="color:#64748b;font-size:10px;margin-top:2px">حصة Gemini المجانية تتجدد يومياً نحو الساعة 11 صباحاً بتوقيت الكويت.</div>';
+        const list = keyList(e), d = diag.engines[e] || { req: 0, ok: 0, fail: 0 };
+        if (!list.length && !d.req) return;
+        const cool = list.length && engineCooled(e);
+        h += '<section style="margin-bottom:12px"><h3 style="font-weight:700;font-size:14px;color:#6ee7b7;margin-bottom:4px">' + esc(ENGINE_NAMES[e]) + ' - ' + list.length + (list.length === 1 ? ' مفتاح' : ' مفاتيح') + (cool ? ' (كلها موقوفة مؤقتاً)' : '') + '</h3>';
+        h += '<div style="color:#94a3b8;margin-bottom:4px">مجموع المحرك: طلبات ' + (d.req || 0) + '، نجح ' + (d.ok || 0) + '، فشل ' + (d.fail || 0) + '</div>';
+        list.forEach((k, i) => {
+          const st = keyStats[k] || { req: 0, ok: 0, fail: 0, tasks: {}, ev: [] };
+          const u = keyUsage[k] && keyUsage[k].d === todayStr ? keyUsage[k].n : 0;
+          const cd = keyCooldown[k] && keyCooldown[k] > Date.now() ? keyCooldown[k] : 0;
+          h += '<div role="group" aria-label="' + esc(ENGINE_NAMES[e]) + ' المفتاح ' + (i + 1) + '" style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px;margin-bottom:6px">';
+          h += '<div style="font-weight:700">' + esc(ENGINE_NAMES[e]) + ' - المفتاح ' + (i + 1) + ' من ' + list.length + ' (' + esc(keyTag(k)) + ')</div>';
+          h += row('الحالة', cd ? 'موقوف حتى ' + fmtClock(cd) : 'جاهز', cd ? '#fbbf24' : '#6ee7b7');
+          h += row('طلبات اليوم', String(u));
+          h += row('الإجمالي', 'طلبات ' + st.req + '، نجح ' + st.ok + '، فشل ' + st.fail);
+          Object.keys(TASK_NAMES).forEach(t => { const x = st.tasks[t]; if (x) h += row(esc(TASK_NAMES[t]), 'نجح ' + x.ok + '، فشل ' + x.fail); });
+          h += row('آخر نجاح', fmt(st.lastOkAt));
+          if (st.lastErr) h += row('آخر خطأ (' + fmt(st.lastErrAt) + ')', esc(st.lastErr), '#fca5a5');
+          if (st.ev && st.ev.length) {
+            h += '<div style="margin-top:4px;color:#94a3b8">آخر الطلبات لهذا المفتاح:</div>';
+            st.ev.slice(0, 6).forEach(x => { h += '<div style="border-bottom:1px solid #1e293b;padding:2px 0">' + fmt(x.t) + ' - ' + esc(TASK_NAMES[x.task] || x.task) + ': ' + (x.ok ? '✅ نجح' : '❌ فشل: ' + esc(x.m)) + '</div>'; });
+          }
           h += '</div>';
-        }
-        h += '</div>';
+        });
+        if (e === 'gemini') h += '<div style="color:#64748b;font-size:10px">حصة Gemini المجانية تتجدد يومياً نحو الساعة 11 صباحاً بتوقيت الكويت.</div>';
+        h += '</section>';
       });
       if (!ENGINES.some(e => keyList(e).length)) h += '<div>ما فيه مفاتيح مضافة.</div>';
-      h += '<b style="display:block;margin:12px 0 6px">آخر المهام (أي محرك خدمها)</b>';
+      const of = diag.offline || {};
+      h += '<section style="margin:12px 0"><h3 style="font-weight:700;font-size:14px;color:#6ee7b7;margin-bottom:4px">OCR المدمج (بدون مفاتيح)</h3><div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px">' +
+        row('صفحات تم استخراجها', String(of.pages || 0)) + row('فشل', String(of.fail || 0)) + row('آخر استخدام', fmt(of.lastAt)) +
+        (of.lastErr ? row('آخر خطأ', esc(of.lastErr), '#fca5a5') : '') + '<div style="color:#94a3b8">جودته أقل من الذكاء الاصطناعي وقد فيه أخطاء، ويشتغل تلقائياً إذا خلصت كل المفاتيح.</div></div></section>';
+      h += '<h2 style="font-weight:700;font-size:14px;margin:12px 0 6px">آخر المهام (كل مهمة لوحدها، ومن خدمها)</h2>';
       if (!diag.log.length) h += '<div style="color:#94a3b8">لا توجد مهام مسجلة بعد.</div>';
       diag.log.slice(0, 25).forEach(l => {
-        h += '<div style="border-bottom:1px solid #1e293b;padding:6px 0">' + fmt(l.t) + ' - ' + esc(TASK_NAMES[l.task] || l.task) + ': ' +
-          (l.served ? '✅ خدمها <b>' + esc(ENGINE_NAMES[l.served] || l.served) + '</b>' + (l.pref && l.pref !== l.served ? ' (المفضل ' + esc(ENGINE_NAMES[l.pref] || l.pref) + ')' : '') : '❌ فشلت') +
-          (l.failed && l.failed.length ? '<div style="color:#fca5a5;font-size:11px">' + l.failed.map(x => esc(ENGINE_NAMES[x.e] || x.e) + ': ' + esc(String(x.m).slice(0, 110))).join('<br>') + '</div>' : '') + '</div>';
+        h += '<div role="group" style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:8px 10px;margin-bottom:6px">' +
+          '<div style="font-weight:700">' + fmt(l.t) + ' - ' + esc(TASK_NAMES[l.task] || l.task) + '</div>' +
+          '<div>' + (l.served ? '✅ خدمها ' + esc(ENGINE_NAMES[l.served] || l.served) + (l.pos ? ' بالمفتاح ' + l.pos : '') + (l.pref && l.pref !== l.served ? ' (المفضل كان ' + esc(ENGINE_NAMES[l.pref] || l.pref) + ')' : '') : '❌ فشلت') + '</div>';
+        (l.failed || []).forEach(x => {
+          h += '<div style="color:#fca5a5">' + esc(ENGINE_NAMES[x.e] || x.e) + ': ' + esc(String(x.m).slice(0, 110)) + '</div>';
+          (x.tries || []).forEach(t2 => { h += '<div style="color:#fca5a5;padding-right:10px">المفتاح ' + t2.pos + ': ' + esc(String(t2.m).slice(0, 100)) + '</div>'; });
+        });
+        h += '</div>';
       });
-      h += '<button onclick="if(confirm(\'مسح سجل التشخيص؟\')){diag={engines:{},log:[]};saveDiag();showDiagnostics();}" style="margin-top:14px;background:#7f1d1d;border-radius:10px;padding:8px 14px;color:#fff;font-weight:700">مسح السجل</button>';
+      h += '<button onclick="if(confirm(\'مسح سجل التشخيص؟\')){diag={engines:{},log:[],offline:{pages:0,fail:0,lastErr:\'\',lastAt:0}};keyStats={};saveKS();saveDiag();showDiagnostics();}" style="margin-top:14px;background:#7f1d1d;border-radius:10px;padding:8px 14px;color:#fff;font-weight:700">مسح السجل</button>';
       ov.innerHTML = h; document.body.appendChild(ov);
     }
+
+    let tessWorker = null, tessInit = null;
+    function loadTesseractLib() {
+      if (window.Tesseract) return Promise.resolve();
+      return new Promise((ok, no) => {
+        const sc = document.createElement('script');
+        sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        sc.onload = () => ok();
+        sc.onerror = () => no(new Error('تعذر تحميل مكتبة OCR المدمجة. تأكد من الإنترنت'));
+        document.head.appendChild(sc);
+      });
+    }
+    async function getTessWorker() {
+      if (tessWorker) return tessWorker;
+      if (!tessInit) tessInit = (async () => { await loadTesseractLib(); return await window.Tesseract.createWorker(['ara', 'eng'], 1, {}); })();
+      try { tessWorker = await tessInit; } finally { tessInit = null; }
+      return tessWorker;
+    }
+    async function offlineOcrImage(img) {
+      const d = diag.offline;
+      try {
+        const w = await getTessWorker();
+        const r = await w.recognize(img);
+        const t = ((r && r.data && r.data.text) || '').trim();
+        if (t) d.pages++; else { d.fail++; d.lastErr = 'لم يُقرأ نص من الصفحة'; }
+        d.lastAt = Date.now(); saveDiag();
+        return t;
+      } catch (e) {
+        d.fail++; d.lastErr = (((e && e.message) || String(e)) + '').slice(0, 200); d.lastAt = Date.now(); saveDiag();
+        throw e;
+      }
+    }
+    async function offlineTerminate() { if (tessWorker) { try { await tessWorker.terminate(); } catch (_) {} tessWorker = null; } }
 
     async function runOcrOnPages(imageDataUrls, engine) {
       const prompt = 'هذه ' + imageDataUrls.length + ' صور لصفحات متتالية من كتاب. استخرج النص المكتوب في كل صفحة بدقة تامة، وافصل نص كل صفحة عن التي تليها بسطر يحتوي فقط على:\n===PAGE===\nأخرج النصوص بنفس ترتيب الصور وبدون أي شرح أو إضافة.';
@@ -1321,7 +1491,7 @@
     }
     function isDailyQuota(err) {
       const m = ((err && err.message) || '').toLowerCase();
-      return m.includes('per day') || m.includes('daily') || m.includes('billing') || m.includes('insufficient');
+      return m.includes('per day') || m.includes('daily') || m.includes('billing') || m.includes('insufficient') || m.includes('credits');
     }
     const keyNotified = {};
     function notifyKeyProblem(engine, pos, total, kind, key) {
@@ -1329,7 +1499,9 @@
       if (keyNotified[id] && Date.now() - keyNotified[id] < 600000) return;
       keyNotified[id] = Date.now();
       const name = ENGINE_NAMES[engine] || engine;
-      const msg = kind === 'bad'
+      const msg = kind === 'billing'
+        ? '💳 ' + name + ': المفتاح ' + pos + (total > 1 ? ' من ' + total : '') + ' ما عنده رصيد أو اشتراك. ' + (total > 1 ? 'انتقلت للمفتاح التالي تلقائياً.' : 'اشحن الرصيد أو أضف مفتاحاً آخر.')
+        : kind === 'bad'
         ? '⚠️ ' + name + ': المفتاح ' + pos + (total > 1 ? ' من ' + total : '') + ' فيه مشكلة (غير صالح أو مرفوض). بدّله من الإعدادات.'
         : '⏳ ' + name + ': المفتاح ' + pos + (total > 1 ? ' من ' + total : '') + ' خلصت حصته. ' + (total > 1 ? 'انتقلت للمفتاح التالي تلقائياً.' : 'أضف مفتاحاً آخر أو انتظر تجدد الحصة.');
       try {
@@ -1348,7 +1520,7 @@
         setTimeout(() => t.remove(), 15000);
       } catch (_) {}
     }
-    async function callUnifiedAI(engine, promptText, imageDataUrls = []) {
+    async function callUnifiedAI(engine, promptText, imageDataUrls = [], task = 'chat', info = null) {
       const list = keyList(engine);
       if (!list.length) throw new Error('مفتاح ' + engine + ' غير مضاف في الإعدادات');
       const start = (keyCursor[engine] || 0) % list.length;
@@ -1362,19 +1534,27 @@
           const dg = diagEng(engine); dg.req++;
           let t;
           try { t = await callOneKey(engine, list[i], promptText, imageDataUrls); }
-          catch (e0) { dg.fail++; dg.lastErr = (((e0 && e0.message) || String(e0)) + '').slice(0, 220) + (list.length > 1 ? ' (مفتاح ' + (i + 1) + ')' : ''); dg.lastErrAt = Date.now(); saveDiag(); throw e0; }
-          if (t && t.trim()) { dg.ok++; dg.lastOkAt = Date.now(); bumpKeyUsage(list[i]); } else { dg.fail++; dg.lastErr = 'رد فارغ'; dg.lastErrAt = Date.now(); }
+          catch (e0) {
+            const m0 = (((e0 && e0.message) || String(e0)) + '').slice(0, 220);
+            dg.fail++; dg.lastErr = m0 + (list.length > 1 ? ' (مفتاح ' + (i + 1) + ')' : ''); dg.lastErrAt = Date.now(); saveDiag();
+            recKey(list[i], task, false, m0);
+            if (info) info.tries.push({ pos: i + 1, m: m0 });
+            throw e0;
+          }
+          if (t && t.trim()) { dg.ok++; dg.lastOkAt = Date.now(); bumpKeyUsage(list[i]); recKey(list[i], task, true); if (info) info.pos = i + 1; }
+          else { dg.fail++; dg.lastErr = 'رد فارغ'; dg.lastErrAt = Date.now(); recKey(list[i], task, false, 'رد فارغ'); if (info) info.tries.push({ pos: i + 1, m: 'رد فارغ' }); }
           saveDiag();
           keyCursor[engine] = i;
           return t;
         } catch (err) {
           lastErr = err;
+          const billing = !!(err && err.status === 402) || /http 402|payment required|insufficient credits|requires more credits/i.test((err && err.message) || '');
           const quota = isQuotaError(err);
-          const bad = /api key|invalid|unauthorized|permission|401|403|incorrect/i.test((err && err.message) || '');
-          if (quota || bad) {
-            keyCooldown[list[i]] = Date.now() + (bad ? 3600000 : (isDailyQuota(err) ? msUntilPacificMidnight() : 60000));
+          const bad = !billing && isBadKey(err);
+          if (quota || bad || billing) {
+            keyCooldown[list[i]] = Date.now() + (bad ? 3600000 : (billing ? 3 * 3600000 : (isDailyQuota(err) ? msUntilPacificMidnight() : 60000)));
             saveCooldowns();
-            notifyKeyProblem(engine, i + 1, list.length, bad ? 'bad' : 'quota', list[i]);
+            notifyKeyProblem(engine, i + 1, list.length, bad ? 'bad' : (billing ? 'billing' : 'quota'), list[i]);
             keyCursor[engine] = (i + 1) % list.length;
             continue; // جرّب المفتاح التالي
           }
@@ -1399,7 +1579,11 @@
       try { data = JSON.parse(raw); } catch (_) {}
       if (!data) throw new Error('HTTP ' + res.status + ': ' + raw.slice(0, 160));
       const em = (data.error && (data.error.message || (typeof data.error === 'string' ? data.error : ''))) || data.message || (data.object === 'error' ? JSON.stringify(data).slice(0, 200) : '') || (data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail).slice(0, 200)) : '');
-      if (!res.ok || data.error || data.object === 'error') throw new Error('HTTP ' + res.status + ': ' + (em || raw.slice(0, 160)));
+      if (!res.ok || data.error || data.object === 'error') {
+        const e2 = new Error('HTTP ' + res.status + ': ' + (em || raw.slice(0, 160)));
+        e2.status = res.ok ? ((data.error && Number(data.error.code)) || 400) : res.status;
+        throw e2;
+      }
       return data;
     }
 
@@ -1420,12 +1604,13 @@
         return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       }
 
-      if (['openai', 'mistral', 'grok', 'deepseek'].includes(engine)) {
+      if (['openai', 'mistral', 'grok', 'deepseek', 'openrouter'].includes(engine)) {
         const endpoints = {
           openai: { url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
           mistral: { url: 'https://api.mistral.ai/v1/chat/completions', model: 'mistral-small-latest' },
           grok: { url: 'https://api.x.ai/v1/chat/completions', model: 'grok-4-latest' },
-          deepseek: { url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' }
+          deepseek: { url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
+          openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', model: (localStorage.getItem('baheth_or_model') || '').trim() || 'google/gemini-2.5-flash-lite' }
         };
         const cfg = endpoints[engine];
         let contentPayload = promptText;
@@ -1436,7 +1621,7 @@
         const res = await fetchT(cfg.url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: contentPayload }] })
+          body: JSON.stringify(Object.assign({ model: cfg.model, messages: [{ role: 'user', content: contentPayload }] }, engine === 'openrouter' ? { max_tokens: 6000 } : {}))
         });
         const data = await apiJson(res);
         return data?.choices?.[0]?.message?.content || '';
@@ -1554,7 +1739,7 @@
     async function withQuotaRetry(fn) {
       for (let a = 0; ; a++) {
         try { return await fn(); }
-        catch (e) { if (a < 2 && e && e.allQuota) { await new Promise(r => setTimeout(r, 20000)); continue; } throw e; }
+        catch (e) { if (a < 2 && e && e.allQuota && !e.hardQuota) { await new Promise(r => setTimeout(r, 20000)); continue; } throw e; }
       }
     }
 
@@ -1566,35 +1751,57 @@
     async function ocrSourceInner(id) {
       const src = sources.find(s => s.id === id); if (!src) { notify('⚠️ المصدر غير موجود', ''); return; }
       if (liveJobs[id]) { notify('⏳ الاستخراج شغال', 'الاستخراج شغال حالياً لهذا المصدر. شوف قسم قيد التنزيل.'); return; }
-      if (!ENGINES.some(e => keys[e])) { notify('⚠️ ما في مفتاح', 'أضف مفتاح محرك في الإعدادات أولاً'); alert('أضف مفتاح محرك في الإعدادات أولاً (OCR يحتاج نموذج ذكاء). بدون مفتاح ما يمكن قراءة صور الكتب.'); return; }
       const todo = (src.pages || []).filter(p => p.image && !pageHasText(p));
       if (!todo.length) { notify('ℹ️', 'كل صفحات هذا المصدر فيها نص'); return; }
+      const hasKeys = ENGINES.some(e => keys[e]);
+      let useOffline = ocrEngine === 'offline' || !hasKeys, switched = false, offFails = 0, offDone = 0;
       const groupSize = 4; let stopped = false, fails = 0, lastErr = '';
       const octl = { kind: 'ocr', paused: false, cancel: false }; liveJobs[id] = octl;
-      notify('📝 بدأ استخراج النص', src.title + ' (' + todo.length + ' صفحة بدون نص). تابعه في قسم قيد التنزيل.');
+      notify('📝 بدأ استخراج النص', src.title + ' (' + todo.length + ' صفحة بدون نص). ' + (useOffline ? 'يستخدم OCR المدمج (جودته أقل). ' : '') + 'تابعه في قسم قيد التنزيل.');
       renderSources();
       for (let g = 0; g < todo.length && !stopped; g += groupSize) {
         if (await ctlGate(octl)) { stopped = true; break; }
         const group = todo.slice(g, g + groupSize);
-        showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')', Math.round(g / todo.length * 100));
-        try {
-          const parts = await withQuotaRetry(() => runOcrOnPages(group.map(p => p.image), prefEngine('ocr')));
-          if (parts.length === group.length) group.forEach((p, i) => { p.text = parts[i] || ''; });
-          else for (const p of group) { try { p.text = await runOcrOnImage(p.image, prefEngine('ocr')); } catch (e2) { lastErr = (e2 && e2.message) || String(e2); if (stopErr(e2)) { stopped = true; break; } } }
-          fails = 0;
-        } catch (err) { fails++; lastErr = (err && err.message) || String(err); if (stopErr(err) || fails >= 2) stopped = true; }
+        showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')' + (useOffline ? ' - OCR مدمج' : ''), Math.round(g / todo.length * 100));
+        if (!useOffline) {
+          try {
+            const parts = await withQuotaRetry(() => runOcrOnPages(group.map(p => p.image), prefEngine('ocr')));
+            if (parts.length === group.length) group.forEach((p, i) => { p.text = parts[i] || ''; if (p.text) delete p.ocrLow; });
+            else for (const p of group) { try { p.text = await runOcrOnImage(p.image, prefEngine('ocr')); delete p.ocrLow; } catch (e2) { lastErr = (e2 && e2.message) || String(e2); if (stopErr(e2)) { useOffline = true; break; } } }
+            fails = 0;
+          } catch (err) { fails++; lastErr = (err && err.message) || String(err); if (stopErr(err) || fails >= 2) useOffline = true; }
+          if (useOffline && !switched) {
+            switched = true;
+            notify('🔁 التحويل إلى OCR المدمج', 'المحركات ما قدرت تكمل (' + (lastErr || 'غير معروف').slice(0, 100) + '). كملت بدونها بـ OCR المدمج، جودته أقل.');
+          }
+        }
+        if (useOffline) {
+          for (const p of group.filter(x => !pageHasText(x))) {
+            if (await ctlGate(octl)) { stopped = true; break; }
+            showProgress('OCR المدمج (جودة أقل): ' + src.title + ' (صفحة ' + p.pageNum + ')', Math.round(g / todo.length * 100));
+            try {
+              const t = await offlineOcrImage(p.image);
+              if (t) { p.text = t; p.ocrLow = true; offDone++; offFails = 0; }
+            } catch (e3) {
+              lastErr = (e3 && e3.message) || String(e3); offFails++;
+              if (offFails >= 2) { stopped = true; break; }
+            }
+          }
+        }
         await dbPut(src); renderSources();
       }
       hideProgress();
+      await offlineTerminate();
       delete liveJobs[id];
       const st = sourceStats(src);
       if (st.text > 0) src.type = 'PDF نصي';
       if (st.empty === 0) delete src.ocrIncomplete; else src.ocrIncomplete = true;
       await dbPut(src); renderSources();
-      if (octl.cancel) notify('⏹ أُلغي الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة');
-      else if (stopped) { notify('⏸ توقف الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة. السبب: ' + (lastErr || 'غير معروف').slice(0, 160)); alert('⏸ توقف الاستخراج. تم ' + st.text + ' من ' + st.total + ' صفحة.\nالسبب: ' + (lastErr || 'غير معروف') + '\nاضغط الزر مرة ثانية لاحقاً لإكمال الباقي.'); }
-      else if (st.empty > 0) { notify('⚠️ انتهى الاستخراج وبقيت صفحات فاضية', 'تم ' + st.text + ' من ' + st.total + ' صفحة' + (lastErr ? '. آخر خطأ: ' + lastErr.slice(0, 120) : '. الباقي صفحات ما انقرأ منها نص، اضغط الزر مرة ثانية.')); }
-      else notify('✅ انتهى استخراج النص', 'تم استخراج النص: ' + st.text + ' من ' + st.total + ' صفحة');
+      const offNote = offDone ? ' (منها ' + offDone + ' صفحة بالـ OCR المدمج: جودتها أقل وقد فيها أخطاء)' : '';
+      if (octl.cancel) notify('⏹ أُلغي الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة' + offNote);
+      else if (stopped) { notify('⏸ توقف الاستخراج', 'تم ' + st.text + ' من ' + st.total + ' صفحة' + offNote + '. السبب: ' + (lastErr || 'غير معروف').slice(0, 160)); alert('⏸ توقف الاستخراج. تم ' + st.text + ' من ' + st.total + ' صفحة' + offNote + '.\nالسبب: ' + (lastErr || 'غير معروف') + '\nاضغط الزر مرة ثانية لاحقاً لإكمال الباقي.'); }
+      else if (st.empty > 0) { notify('⚠️ انتهى الاستخراج وبقيت صفحات فاضية', 'تم ' + st.text + ' من ' + st.total + ' صفحة' + offNote + (lastErr ? '. آخر خطأ: ' + lastErr.slice(0, 120) : '. الباقي صفحات ما انقرأ منها نص، اضغط الزر مرة ثانية.')); }
+      else notify('✅ انتهى استخراج النص', 'تم استخراج النص: ' + st.text + ' من ' + st.total + ' صفحة' + offNote);
     }
 
     async function sendMessage() {
@@ -1627,7 +1834,7 @@
       let allPages = [];
       activeSources.forEach(src => {
         (src.pages || []).forEach(p => {
-          allPages.push({ sourceTitle: src.title, sourceType: src.type, pageNum: p.pageNum, text: p.text || '', image: p.image });
+          allPages.push({ sourceTitle: src.title, sourceType: src.type, pageNum: p.pageNum, text: p.text || '', image: p.image, ocrLow: !!p.ocrLow });
         });
       });
 
@@ -1734,6 +1941,7 @@
           if (fb) citedPages.push(fb.page);
         }
 
+        if (citedPages.some(cp => cp.ocrLow)) rawReply += '\n\n⚠️ تنبيه: نص بعض هذه الصفحات استُخرج بالـ OCR المدمج وجودته أقل، فقد تجد كلمات خاطئة. راجع صورة الصفحة للتأكد.';
         updateMessage(loadingId, rawReply, citedPages, shouldAutoSpeak);
       } catch (err) {
         updateMessage(loadingId, '❌ خطأ من محرك ' + chosenEngine.toUpperCase() + ': ' + err.message + '\nجرّب فحص المفاتيح من الإعدادات.', [], false);
@@ -1996,7 +2204,7 @@
         '</div>';
 
       document.getElementById('chatContainer').scrollTop = document.getElementById('chatContainer').scrollHeight;
-      if (autoSpeak) speakText(id);
+      if (autoSpeak) setTimeout(() => speakText(id), localStorage.getItem('baheth_chat_sounds') === 'false' ? 0 : 600);
     }
 
     function copyText(id) {
@@ -2054,17 +2262,35 @@
   window.a11yAnnounce = announce;
 
   // ---------- المؤثرات الصوتية ----------
+  const CATALOG = {
+    rise: { n: 'نغمتان صاعدتان هادئتان (الإرسال القديم)', notes: [{ f: 520, s: 0, d: 0.09, v: 0.3 }, { f: 740, s: 0.07, d: 0.1, v: 0.3 }] },
+    fall: { n: 'نغمتان هابطتان هادئتان (الاستقبال القديم)', notes: [{ f: 880, s: 0, d: 0.09, v: 0.28 }, { f: 660, s: 0.09, d: 0.16, v: 0.28 }] },
+    bell: { n: 'جرس', notes: [{ f: 1046, s: 0, d: 0.45, v: 0.3 }, { f: 1568, s: 0, d: 0.35, v: 0.12 }] },
+    chime: { n: 'رنين ثلاث نغمات', notes: [{ f: 660, s: 0, d: 0.12, v: 0.3 }, { f: 880, s: 0.11, d: 0.12, v: 0.3 }, { f: 1175, s: 0.22, d: 0.2, v: 0.3 }] },
+    pop: { n: 'نقرة قصيرة', notes: [{ f: 700, s: 0, d: 0.06, v: 0.3 }] },
+    drop: { n: 'قطرة ماء', notes: [{ f: 900, s: 0, d: 0.05, v: 0.3 }, { f: 600, s: 0.05, d: 0.12, v: 0.3 }] },
+    ding: { n: 'دينغ طويلة', notes: [{ f: 1320, s: 0, d: 0.4, v: 0.3 }] },
+    low: { n: 'نغمة منخفضة', notes: [{ f: 330, s: 0, d: 0.12, v: 0.32 }, { f: 440, s: 0.1, d: 0.16, v: 0.32 }] },
+    double: { n: 'نقرتان', notes: [{ f: 800, s: 0, d: 0.05, v: 0.3 }, { f: 800, s: 0.13, d: 0.05, v: 0.3 }] },
+    tick: { n: 'نقرة خفيفة جداً', notes: [{ f: 520, s: 0, d: 0.05, v: 0.14 }] },
+    none: { n: 'بدون صوت', notes: [] }
+  };
+  const DEFAULTS = { send: 'rise', receive: 'fall', tick: 'tick' };
+  function sfxLevel() { const v = parseFloat(localStorage.getItem('baheth_sfx_vol') || '0.4'); return v >= 0.05 && v <= 1 ? v : 0.4; }
+  function sfxChoice(kind) { const c = localStorage.getItem('baheth_sfx_' + kind); return CATALOG[c] ? c : DEFAULTS[kind]; }
+
   function makeWav(notes) {
     const sr = 22050;
-    const total = Math.max.apply(null, notes.map((n) => n.start + n.dur)) + 0.05;
+    if (!notes.length) notes = [{ f: 100, s: 0, d: 0.05, v: 0 }];
+    const total = Math.max.apply(null, notes.map((n) => n.s + n.d)) + 0.05;
     const N = Math.floor(sr * total);
     const pcm = new Int16Array(N);
     notes.forEach((n) => {
-      const s0 = Math.floor(n.start * sr), len = Math.floor(n.dur * sr), att = Math.floor(sr * 0.008);
+      const s0 = Math.floor(n.s * sr), len = Math.floor(n.d * sr), att = Math.floor(sr * 0.008);
       for (let i = 0; i < len && s0 + i < N; i++) {
         const t = i / sr;
         const env = (i < att ? i / att : 1) * Math.pow(1 - i / len, 1.5);
-        const v = Math.sin(2 * Math.PI * n.f * t) * n.vol * env;
+        const v = Math.sin(2 * Math.PI * n.f * t) * n.v * env;
         pcm[s0 + i] = Math.max(-32767, Math.min(32767, pcm[s0 + i] + Math.round(v * 32767)));
       }
     });
@@ -2075,18 +2301,18 @@
     dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
     w(36, 'data'); dv.setUint32(40, N * 2, true);
     for (let i = 0; i < N; i++) dv.setInt16(44 + i * 2, pcm[i], true);
-    return { notes, url: URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })) };
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
   }
-  const SFX = {
-    // إرسال: نغمة صاعدة قصيرة وهادئة (مثل النغمة القديمة)
-    send: makeWav([{ f: 520, start: 0, dur: 0.09, vol: 0.12 }, { f: 740, start: 0.07, dur: 0.1, vol: 0.12 }]),
-    // وصول الرد: نغمتان هادئتان (مثل النغمة القديمة)
-    receive: makeWav([{ f: 880, start: 0, dur: 0.09, vol: 0.11 }, { f: 660, start: 0.09, dur: 0.16, vol: 0.11 }]),
-    // نقرة خفيفة جداً أثناء الانتظار
-    tick: makeWav([{ f: 520, start: 0, dur: 0.05, vol: 0.05 }])
-  };
-  const silentUrl = makeWav([{ f: 100, start: 0, dur: 0.05, vol: 0.0 }]).url;
-  let sfxEl = null, ctx = null, unlocked = false;
+  const wavCache = {};
+  function getSound(id) {
+    const def = CATALOG[id]; if (!def || !def.notes.length) return null;
+    const lv = Math.round(sfxLevel() * 20) / 20, key = id + '|' + lv;
+    const notes = def.notes.map((n) => ({ f: n.f, s: n.s, d: n.d, v: Math.min(0.95, n.v * lv / 0.4) }));
+    if (!wavCache[key]) wavCache[key] = makeWav(notes);
+    return { url: wavCache[key], notes: notes };
+  }
+  const silentUrl = makeWav([{ f: 100, s: 0, d: 0.05, v: 0.0 }]);
+  let sfxEl = null, ctx = null;
   function getEl() {
     if (!sfxEl) { sfxEl = new Audio(); sfxEl.preload = 'auto'; sfxEl.setAttribute('playsinline', ''); sfxEl.volume = 1; }
     return sfxEl;
@@ -2095,45 +2321,71 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     if (!ctx) ctx = new AC();
-    if (ctx.state === 'suspended') ctx.resume();
+    if (ctx.state !== 'running') { try { ctx.resume(); } catch (_) {} }
     return ctx;
   }
+  // يُعاد فتح قناة الصوت مع كل لمسة، لأن iOS يغلقها بعد القراءة الصوتية أو الميكروفون
   function unlockAudio() {
-    if (unlocked) return;
-    unlocked = true;
-    try { const a = getEl(); a.src = silentUrl; const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
-    try { const c = getCtx(); if (c) { const b = c.createBuffer(1, 1, 22050), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } } catch (_) {}
+    try { const a = getEl(); if (a.paused) { a.src = silentUrl; const p = a.play(); if (p && p.catch) p.catch(() => {}); } } catch (_) {}
+    try { const c = getCtx(); if (c) { const b = c.createBuffer(1, 1, 22050), sn = c.createBufferSource(); sn.buffer = b; sn.connect(c.destination); sn.start(0); } } catch (_) {}
   }
   ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'].forEach((ev) => document.addEventListener(ev, unlockAudio, { passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) getCtx(); });
 
-  function webAudioPlay(kind) {
+  function webAudioPlay(notes) {
     try {
       const c = getCtx(); if (!c) return;
-      const t0 = c.currentTime;
-      SFX[kind].notes.forEach((n) => {
+      const t0 = c.currentTime + 0.02;
+      notes.forEach((n) => {
         const o = c.createOscillator(), g = c.createGain();
         o.type = 'sine'; o.frequency.value = n.f;
-        g.gain.setValueAtTime(0.0001, t0 + n.start);
-        g.gain.exponentialRampToValueAtTime(n.vol, t0 + n.start + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + n.start + n.dur);
+        g.gain.setValueAtTime(0.0001, t0 + n.s);
+        g.gain.exponentialRampToValueAtTime(Math.max(0.0002, n.v), t0 + n.s + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + n.s + n.d);
         o.connect(g); g.connect(c.destination);
-        o.start(t0 + n.start); o.stop(t0 + n.start + n.dur + 0.03);
+        o.start(t0 + n.s); o.stop(t0 + n.s + n.d + 0.03);
       });
     } catch (_) {}
   }
-  window.chatSound = function (kind) {
-    if (localStorage.getItem('baheth_chat_sounds') === 'false') return;
-    if (!SFX[kind]) return;
+  function playSfx(id) {
+    const snd = getSound(id); if (!snd) return;
+    let started = false;
     try {
       const a = getEl();
-      a.pause();
-      a.src = SFX[kind].url;
-      a.currentTime = 0;
-      a.volume = 1;
+      a.pause(); a.src = snd.url; a.currentTime = 0; a.volume = 1;
       const p = a.play();
-      if (p && p.catch) p.catch(() => webAudioPlay(kind));
-    } catch (_) { webAudioPlay(kind); }
+      if (p && p.then) p.then(() => { started = true; }).catch(() => { if (!started) { started = true; webAudioPlay(snd.notes); } });
+      setTimeout(() => { if (!started && a.paused && a.currentTime === 0) { started = true; webAudioPlay(snd.notes); } }, 450);
+    } catch (_) { webAudioPlay(snd.notes); }
+  }
+  window.chatSound = function (kind) {
+    if (localStorage.getItem('baheth_chat_sounds') === 'false') return;
+    playSfx(sfxChoice(kind));
   };
+  window.sfxPreview = function (kind) {
+    unlockAudio();
+    playSfx(sfxChoice(kind));
+    announce('تجربة ' + (kind === 'send' ? 'صوت الإرسال' : kind === 'receive' ? 'صوت وصول الإجابة' : 'صوت الانتظار') + ': ' + CATALOG[sfxChoice(kind)].n);
+  };
+  window.sfxSave = function (kind) {
+    ['send', 'receive', 'tick'].forEach((k) => {
+      const el = $(k === 'send' ? 'sfxSend' : k === 'receive' ? 'sfxReceive' : 'sfxTick');
+      if (el && el.value) localStorage.setItem('baheth_sfx_' + k, el.value);
+    });
+    const v = $('sfxVol');
+    if (v) { localStorage.setItem('baheth_sfx_vol', v.value); const l = $('sfxVolVal'); if (l) l.textContent = Math.round(parseFloat(v.value) * 100) + '٪'; }
+    if (kind) { unlockAudio(); playSfx(sfxChoice(kind)); }
+  };
+  function initSfxUi() {
+    [['send', 'sfxSend'], ['receive', 'sfxReceive'], ['tick', 'sfxTick']].forEach((p) => {
+      const el = $(p[1]); if (!el) return;
+      el.innerHTML = Object.keys(CATALOG).map((id) => '<option value="' + id + '">' + CATALOG[id].n + '</option>').join('');
+      el.value = sfxChoice(p[0]);
+    });
+    const v = $('sfxVol');
+    if (v) { v.value = String(sfxLevel()); const l = $('sfxVolVal'); if (l) l.textContent = Math.round(sfxLevel() * 100) + '٪'; }
+  }
+  initSfxUi();
 
   // نقرات انتظار أثناء توليد الإجابة
   let pending = 0, tickTimer = null;
