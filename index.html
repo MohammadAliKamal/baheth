@@ -195,7 +195,7 @@
 
       <button type="button" onclick="document.getElementById('fileImporter').click()" class="w-full py-2.5 px-3 rounded-xl bg-emerald-600/20 border border-dashed border-emerald-500/60 text-emerald-300 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition" aria-label="اختيار كتب PDF أو صور أو ملفات نصية من الجهاز"><span>➕ اختر كتب PDF أو صور صفحات أو TXT (بلا حدود)</span></button>
       <input type="file" id="fileImporter" multiple accept=".txt,.pdf,image/*" class="hidden" onchange="handleFilesImport(event)" />
-      <p class="text-[10px] text-slate-400 leading-relaxed">💡 تقدر تحدد أكثر من كتاب دفعة واحدة من تطبيق "الملفات". أثناء الاستيراد خلّ التطبيق مفتوحاً، وتقدّمك ينحفظ تلقائياً — إذا انقطع، أعد اختيار نفس الملف ويكمّل من حيث وقف.</p>
+      <p class="text-[10px] text-slate-400 leading-relaxed">💡 تقدر تحدد أكثر من كتاب دفعة واحدة من تطبيق "الملفات". أثناء الاستيراد خلّ التطبيق مفتوحاً، وتقدّمك ينحفظ تلقائياً — إذا توقف يظهر السبب، اضغط استئناف ▶️ ويكمل مباشرة، ولا يطلب منك الملف إلا لو انقفل التطبيق.</p>
     </div>
 
     <div id="panel-url" class="source-panel hidden bg-slate-900 border border-slate-800 rounded-2xl p-3 mb-2.5 shrink-0 space-y-2">
@@ -949,12 +949,6 @@
       renderSources();
     }
 
-    function resumeImport(id) {
-      pendingResumeId = id;
-      alert('لإكمال التنزيل اختر نفس ملف الكتاب مرة ثانية، وبيكمل من الصفحة اللي وقف عندها.');
-      document.getElementById('fileImporter').click();
-    }
-
     async function cancelJob(id) {
       const src = sources.find(s => s.id === id);
       const what = src && src.translating ? 'الترجمة' : (liveJobs[id] && liveJobs[id].kind === 'ocr' ? 'استخراج النص' : 'التنزيل');
@@ -1028,18 +1022,49 @@
       if (document.visibilityState === 'visible' && importRunning) acquireImportWakeLock();
     });
 
+    const importFiles = new Map();
+    const importQueue = [];
+
     async function handleFilesImport(event) {
       const files = Array.from(event.target.files);
       if (!files.length) return;
+      const resumeSrc = pendingResumeId ? sources.find(s => s.id === pendingResumeId) : null;
+      pendingResumeId = null;
+      files.forEach(f => importQueue.push({ file: f, auto: !!(resumeSrc && resumeSrc.title === f.name) }));
+      try { event.target.value = ''; } catch (_) {}
+      if (importRunning) {
+        showProgress('أُضيف ' + files.length + ' ملف إلى الطابور، سيبدأ بعد الملف الحالي', 2);
+        return;
+      }
+      await runImportQueue();
+    }
 
+    function resumeImport(id) {
+      const src = sources.find(s => s.id === id);
+      const file = importFiles.get(id);
+      if (file) {
+        if (src) { delete src.importError; dbPut(src).catch(() => {}); }
+        importQueue.push({ file, auto: true });
+        renderSources();
+        if (!importRunning) runImportQueue();
+        else showProgress('أُضيف الكتاب إلى الطابور، سيكمل بعد الملف الحالي', 2);
+        return;
+      }
+      pendingResumeId = id;
+      alert('لإكمال تنزيل «' + (src ? src.title : 'الكتاب') + '» اختر ملف الكتاب نفسه من تطبيق الملفات. التطبيق انقفل أو انعاد فتحه فنسي مكان الملف. سيكمل من الصفحة ' + (src && src.pages ? src.pages.length + 1 : 1) + ' بدون إعادة ما تم.');
+      document.getElementById('fileImporter').click();
+    }
+
+    async function runImportQueue() {
       importRunning = true;
       acquireImportWakeLock();
       if (window.evSound) window.evSound('dlStart');
-      let importedCount = 0, failedCount = 0;
-
-      for (let fi = 0; fi < files.length; fi++) {
-        const file = files[fi];
-        const fileLabel = files.length > 1 ? ' (ملف ' + (fi + 1) + '/' + files.length + ')' : '';
+      let importedCount = 0, total = 0;
+      const failures = [];
+      while (importQueue.length) {
+        const { file, auto } = importQueue.shift();
+        total++;
+        const fileLabel = ' (ملف ' + total + (importQueue.length ? ' وباقي ' + importQueue.length : '') + ')';
         showProgress('فهرسة: ' + file.name + fileLabel, 2);
         try {
           if (file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')) {
@@ -1051,7 +1076,7 @@
             importedCount++;
             showProgress('اكتمل: ' + file.name, 100);
           } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-            await importPdfFile(file, fileLabel);
+            await importPdfFile(file, fileLabel, auto);
             importedCount++;
           } else if (file.type.startsWith('image/')) {
             const imgData = await compressImageFile(file);
@@ -1062,7 +1087,8 @@
             showProgress('اكتمل استيراد الصورة (زر 📝 OCR يستخرج نصها لاحقاً)', 100);
           }
         } catch (err) {
-          failedCount++;
+          if (err && err.cancelled) continue;
+          failures.push(file.name + ': ' + ((err && err.message) || 'خطأ غير معروف'));
           console.error('Import failed:', file.name, err);
         }
         renderSources();
@@ -1071,28 +1097,36 @@
       importRunning = false;
       releaseImportWakeLock();
 
-      if (failedCount > 0) {
-        showProgress('⚠️ تعذر استيراد ' + failedCount + ' ملف', 100);
-        alert('تعذر استيراد ' + failedCount + ' من ' + files.length + ' ملف. جرّب استيرادها واحداً واحداً.');
+      if (failures.length) {
+        showProgress('⚠️ توقف استيراد ' + failures.length + ' ملف', 100);
+        notify('⚠️ توقف التنزيل', failures.join(' | ') + ' — اضغط زر استئناف ▶️ في الملفات ليكمل من حيث وقف.');
+        if (window.evSound) window.evSound('evErr');
       } else {
         showProgress('✅ اكتمل الاستيراد (' + importedCount + ')', 100);
+        if (window.evSound) window.evSound('dlEnd');
       }
       hideProgress();
-      if (window.evSound) window.evSound(failedCount > 0 ? 'evErr' : 'dlEnd');
-      event.target.value = '';
+      renderSources();
     }
 
-    async function importPdfFile(file, fileLabel) {
+    async function importPdfFile(file, fileLabel, auto) {
       const ctl = { kind: 'import', paused: false, cancel: false, file };
-      try { await importPdfFileInner(file, fileLabel, ctl); }
+      importFiles.set('pending:' + file.name + ':' + file.size, file);
+      try { await importPdfFileInner(file, fileLabel, ctl, auto); }
+      catch (err) {
+        const src = sources.find(s => s.complete === false && s.title === file.name && s.fileSize === file.size);
+        const msg = (err && err.message) || 'خطأ غير معروف';
+        if (src) { src.importError = msg; try { await dbPut(src); } catch (_) {} }
+        throw err;
+      }
       finally { Object.keys(liveJobs).forEach(k => { if (liveJobs[k] === ctl) delete liveJobs[k]; }); renderSources(); }
     }
 
-    async function importPdfFileInner(file, fileLabel, ctl) {
+    async function importPdfFileInner(file, fileLabel, ctl, auto) {
       let src = sources.find(s => (s.complete === false || s.ocrIncomplete) && s.title === file.name && s.fileSize === file.size);
       let pages = [], startPage = 1, hasText = false;
       if (src && src.pages && src.pages.length > 0) {
-        if (!confirm('يوجد استيراد غير مكتمل لهذا الكتاب (' + src.pages.length + ' من ' + (src.totalPages || '?') + ' صفحة).\n\nموافق = الإكمال من حيث توقف\nإلغاء = البدء من جديد')) {
+        if (!auto && !confirm('يوجد استيراد غير مكتمل لهذا الكتاب (' + src.pages.length + ' من ' + (src.totalPages || '?') + ' صفحة).\n\nموافق = الإكمال من حيث توقف\nإلغاء = البدء من جديد')) {
           await dbDelete(src.id);
           sources = sources.filter(s => s.id !== src.id);
           src = null;
@@ -1102,9 +1136,16 @@
           hasText = pages.some(p => p.text && p.text.length > 20);
         }
       }
+      if (src) { delete src.importError; }
 
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let pdf;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      } catch (e) {
+        if (src) importFiles.delete(src.id);
+        throw new Error('تعذر قراءة ملف الكتاب (' + ((e && e.message) || 'خطأ') + '). اضغط استئناف ▶️ واختر الملف من جديد.');
+      }
       const total = pdf.numPages;
 
       if (!src) {
@@ -1122,41 +1163,62 @@
         sources.unshift(src);
       }
       src.totalPages = total;
+      importFiles.set(src.id, file);
+      importFiles.delete('pending:' + file.name + ':' + file.size);
       liveJobs[src.id] = ctl;
       pendingResumeId = null;
       renderSources();
 
-      const abortImport = async () => { try { pdf.destroy(); } catch (_) {} await dbDelete(src.id); sources = sources.filter(x => x.id !== src.id); showProgress('أُلغي التنزيل', 0); hideProgress(); };
+      const abortImport = async () => { try { pdf.destroy(); } catch (_) {} importFiles.delete(src.id); await dbDelete(src.id); sources = sources.filter(x => x.id !== src.id); showProgress('أُلغي التنزيل', 0); hideProgress(); };
+
+      const readPage = async (pageNum) => {
+        const page = await pdf.getPage(pageNum);
+        try {
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(it => it.str).join(' ').trim();
+          if (pageText.length > 20) return { pageNum, text: pageText };
+          const viewport = page.getViewport({ scale: 1.15 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+          const imgData = canvas.toDataURL('image/jpeg', 0.65);
+          canvas.width = 0; canvas.height = 0;
+          return { pageNum, text: pageText, image: imgData };
+        } finally { try { page.cleanup(); } catch (_) {} }
+      };
 
       const batchSize = 3;
       for (let start = startPage; start <= total; start += batchSize) {
-        if (await ctlGate(ctl)) { await abortImport(); return; }
-        const batchPromises = [];
-        for (let p = start; p < start + batchSize && p <= total; p++) {
-          batchPromises.push((async (pageNum) => {
-            const page = await pdf.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(it => it.str).join(' ').trim();
-
-            if (pageText.length > 20) {
-              return { pageNum, text: pageText };
+        if (await ctlGate(ctl)) { await abortImport(); const ce = new Error('cancelled'); ce.cancelled = true; throw ce; }
+        const nums = [];
+        for (let p = start; p < start + batchSize && p <= total; p++) nums.push(p);
+        let batchResults = null;
+        try { batchResults = await Promise.all(nums.map(readPage)); }
+        catch (e1) {
+          // retry page by page, up to 3 tries each, so one bad page does not stop the book
+          batchResults = [];
+          for (const pn of nums) {
+            let r = null, lastErr = e1;
+            for (let t = 0; t < 3 && !r; t++) {
+              try { r = await readPage(pn); } catch (e2) { lastErr = e2; await new Promise(res => setTimeout(res, 700 * (t + 1))); }
             }
-
-            const viewport = page.getViewport({ scale: 1.15 });
-            const canvas = document.createElement('canvas');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-            const imgData = canvas.toDataURL('image/jpeg', 0.65);
-            return { pageNum, text: pageText, image: imgData };
-          })(p));
+            if (!r) {
+              try { pdf.destroy(); } catch (_) {}
+              throw new Error('تعذرت قراءة الصفحة ' + pn + ' من ' + total + ' (' + ((lastErr && lastErr.message) || 'خطأ') + '). تم حفظ ما قبلها، اضغط استئناف ▶️ ليكمل.');
+            }
+            batchResults.push(r);
+          }
         }
-        const batchResults = await Promise.all(batchPromises);
         batchResults.forEach(r => { if (r.text && r.text.length > 20) hasText = true; });
         pages.push(...batchResults);
         pages.sort((a, b) => a.pageNum - b.pageNum);
 
-        await dbPut(src);
+        try { await dbPut(src); }
+        catch (e3) {
+          try { pdf.destroy(); } catch (_) {}
+          throw new Error('تعذر حفظ التقدم، غالباً مساحة التخزين ممتلئة (' + ((e3 && e3.message) || 'خطأ') + '). فرّغ مساحة ثم اضغط استئناف ▶️.');
+        }
         const pct = Math.min(100, Math.round((pages.length / total) * 100));
         showProgress(file.name + fileLabel + ' (' + pages.length + '/' + total + ')', pct);
         renderSources();
@@ -1168,7 +1230,9 @@
       src.complete = true;
       src.type = hasText ? 'PDF نصي' : 'PDF مصور';
       delete src.fileSize;
+      delete src.importError;
       await dbPut(src);
+      importFiles.delete(src.id);
       try { pdf.destroy(); } catch (_) {}
       if (ocrLeft > 0) notify('📷 حُفظ الكتاب بدون استهلاك حصة', file.name + ': ' + ocrLeft + ' صفحة صور محفوظة. اضغط زر 📝 OCR على الكتاب في تبويبة الملفات متى شئت لاستخراج نصها (يكمل من حيث توقف).');
     }
