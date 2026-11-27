@@ -2245,24 +2245,38 @@
           updateMessage(loadingId, '🔎 الوضع المحلي (بدون مفاتيح) ما يقدر يكتب ملخصاً حقيقياً، لأن التلخيص يحتاج نموذج ذكاء. هذي مقاطع موزعة على الكتاب تعطيك فكرة، وللتلخيص الفعلي اختر الوضع "🤖 ذكي".\n\n' + body + note, pick, false);
           return;
         }
-        if (!bm.hits.length) { updateMessage(loadingId, '🔍 ما لقيت صفحات فيها كلمات سؤالك. جرّب كلمات ثانية أو أقصر (اسم المكان أو الشخص).' + note, [], false); return; }
+        if (!bm.hits.length) { updateMessage(loadingId, '🔍 ما لقيت صفحات فيها كلمات سؤالك. جرّب كلمات ثانية أو أقصر (اسم المكان أو الشخص).' + note, [], false, ['لخص لي أهم النقاط مع ذكر الصفحات والمصادر', 'ما المصادر المفعلة في مكتبتي؟']); return; }
         const top = bm.hits.slice(0, 5);
         const body = top.map((h, i) => (i + 1) + '. 📖 ' + h.page.sourceTitle + ' | 📄 صفحة ' + h.page.pageNum + '\n' + snippetAround(h.page.text, bm.terms, 380)).join('\n\n');
         updateMessage(loadingId, '🔎 أقرب المقاطع في مصادرك (بحث محلي بدون مفاتيح، يعرض النص كما هو بدون صياغة):\n\n' + body + note, top.slice(0, 3).map(h => h.page), shouldAutoSpeak);
         return;
       }
 
+      const pool = allPages.filter(p => pageHasText(p) && (!scoped.length || scoped.some(s => s.title === p.sourceTitle)));
+      const broad = summary || qTok.length <= 2 || bm.hits.length < 3;
+      const bmPages = bm.hits.map(h => h.page);
+      const bmSet = new Set(bmPages);
       let topPages;
-      if (summary) {
-        const pool = allPages.filter(p => pageHasText(p) && (!scoped.length || scoped.some(s => s.title === p.sourceTitle)));
-        topPages = sampleEvenly(pool, 8);
+      if (broad) {
+        // سؤال عام أو مطابقات قليلة: نرسل للمحرك نظرة أوسع على الكتاب —
+        // صفحات البحث المطابقة أولاً، ثم الصفحات الأولى من كل مصدر (الغلاف/الفهرس)،
+        // ثم عينة موزعة على الكتاب كله.
+        const picks = bmPages.slice();
+        const bySrc = {};
+        pool.forEach(p => { (bySrc[p.sourceTitle] = bySrc[p.sourceTitle] || []).push(p); });
+        Object.keys(bySrc).forEach(t => {
+          const arr = bySrc[t].slice().sort((a, b) => a.pageNum - b.pageNum);
+          arr.slice(0, 2).forEach(p => { if (picks.indexOf(p) < 0) picks.push(p); });
+        });
+        sampleEvenly(pool, 12).forEach(p => { if (picks.indexOf(p) < 0) picks.push(p); });
+        topPages = picks.slice(0, 12);
       } else {
-        topPages = bm.hits.map(h => h.page);
+        topPages = bmPages;
       }
       const chosenEngine = prefEngine('chat');
 
       if (!topPages.length) {
-        updateMessage(loadingId, '🔍 ما لقيت في الصفحات النصية أي صفحة فيها كلمات سؤالك، فما أرسلته للذكاء الاصطناعي (توفيراً للحصة). جرّب صياغة ثانية بكلمات من الكتاب، أو غيّر الوضع إلى "🔎 محلي".' + note, [], false);
+        updateMessage(loadingId, '🔍 ما لقيت في الصفحات النصية أي صفحة فيها كلمات سؤالك، فما أرسلته للذكاء الاصطناعي (توفيراً للحصة). جرّب صياغة ثانية بكلمات من الكتاب، أو غيّر الوضع إلى "🔎 محلي".' + note, [], false, ['لخص لي أهم النقاط مع ذكر الصفحات والمصادر', 'ما المصادر المفعلة في مكتبتي؟']);
         return;
       }
       if (!chosenEngine) {
@@ -2278,19 +2292,22 @@
         const histText = prev.map(m => (m.sender === 'user' ? 'المستخدم: ' : 'باحث: ') + String(m.text).slice(0, 400)).join('\n');
 
         let prompt = 'أنت المساعد الذكي "باحث". أجب باللغة العربية بدقة بالاعتماد على الصفحات والمصادر المرفقة.\n' +
-          'الصفحات المرفقة مقتطفات مختارة من الكتب وليست الكتاب كاملاً. إذا طُلب تلخيص فلخّص ما في المقتطفات واذكر صفحاتها.\nقواعد الإجابة:\n' +
+          'الصفحات المرفقة مقتطفات مختارة من الكتب وليست الكتاب كاملاً. إذا طُلب تلخيص فلخّص ما في المقتطفات واذكر صفحاتها، ولا تعتذر عن التلخيص ما دامت عندك مقتطفات.\nقواعد الإجابة:\n' +
           '1. اذكر في إجابتك اسم المصدر (الكتاب/المقالة/الفيديو) ورقم الصفحة بدقة.\n' +
           '2. في نهاية ردك مباشرة، أضف هذا السطر لعرض صورة الصفحة للمستخدم:\n' +
           'REF_PAGE: [اسم_المصدر_بالضبط] | [رقم_الصفحة]\n' +
           'ولا تذكر في REF_PAGE إلا صفحة من الصفحات المرفقة أعلاه التي وجدت فيها الإجابة فعلاً.\n' +
-          (strictMode ? '3. التزم حصرياً بالمصادر المرفقة. إذا لم تجد الإجابة في الصفحات المرفقة، قل: "عذراً، هذه المعلومة غير متوفرة في المصادر المفعلة حالياً."\n' : '') +
+          (strictMode ? '3. التزم بالصفحات المرفقة ولا تختلق معلومات من خارجها، لكن لا تكتفِ بجملة "عذراً، هذه المعلومة غير متوفرة" وحدها ما دام في الصفحات أي شيء متعلق بالسؤال: أجب بما ورد فعلاً ولو كان جواباً جزئياً أو تقريبياً أو معلومة قريبة، وبيّن للمستخدم ما ينقص ليكتمل الجواب. ولا تقل "غير متوفرة" إلا إذا لم تكن في الصفحات المرفقة أي صلة بالسؤال إطلاقاً.\n' : '') +
+          '4. بعد سطر REF_PAGE أضف سطرين أو ثلاثة، كل سطر سؤال متابعة قصير بالعربية بهذه الصيغة فقط:\n' +
+          'SUGGEST: [نص السؤال]\n' +
+          'إن كان الجواب ناقصاً فاجعل الاقتراحات بدائل توضّح قصد المستخدم (مثل: هل تقصد كذا؟) أو طلبات استيضاح أدق، وإن كان الجواب كاملاً فاجعلها أسئلة تعمّق الموضوع من المصادر نفسها. لا ترقّمها ولا تشرحها ولا تكرر سؤال المستخدم.\n' +
           (histText ? '\nسياق الدردشة السابقة:\n' + histText + '\n' : '') +
           '\nسؤال المستخدم: ' + query + '\n\n--- محتوى المصادر ---\n';
 
         let imagesToSend = [];
         topPages.forEach(p => {
           prompt += '\n[المصدر: ' + p.sourceTitle + ' | صفحة: ' + p.pageNum + ']\n';
-          prompt += (summary ? p.text.slice(0, 1800) : snippetAround(p.text, bm.terms, 1800)) + '\n';
+          prompt += (bmSet.has(p) && bm.terms.length ? snippetAround(p.text, bm.terms, 1800) : p.text.slice(0, 1800)) + '\n';
         });
 
         let aiResult;
@@ -2323,13 +2340,23 @@
         }
         rawReply = rawReply.replace(refRegex, '').trim();
 
+        let suggestions = [];
+        const suggRegex = /^\s*SUGGEST:\s*(.+?)\s*$/gim;
+        let sMatch;
+        while ((sMatch = suggRegex.exec(rawReply)) !== null) {
+          const s = sMatch[1].replace(/^[\-\*•\d\.\)\s]+/, '').trim();
+          if (s.length >= 4 && s.length <= 140 && suggestions.indexOf(s) < 0) suggestions.push(s);
+          if (suggestions.length >= 3) break;
+        }
+        rawReply = rawReply.replace(/^\s*SUGGEST:.*$/gim, '').replace(/\n{3,}/g, '\n\n').trim();
+
         if (citedPages.length === 0 && !rawReply.includes('غير متوفرة') && !rawReply.includes('غير متوفره')) {
           const fb = bm.hits.find(h2 => pageHasText(h2.page));
           if (fb) citedPages.push(fb.page);
         }
 
         if (citedPages.some(cp => cp.ocrLow)) rawReply += '\n\n⚠️ تنبيه: نص بعض هذه الصفحات استُخرج بالـ OCR المدمج وجودته أقل، فقد تجد كلمات خاطئة. راجع صورة الصفحة للتأكد.';
-        updateMessage(loadingId, rawReply, citedPages, shouldAutoSpeak);
+        updateMessage(loadingId, rawReply, citedPages, shouldAutoSpeak, suggestions);
       } catch (err) {
         updateMessage(loadingId, '❌ خطأ من محرك ' + chosenEngine.toUpperCase() + ': ' + err.message + '\nجرّب فحص المفاتيح من الإعدادات.', [], false);
       }
@@ -2447,7 +2474,7 @@
       if (!real.some(m => m.sender === 'user')) return;
       cur.title = String(real.find(m => m.sender === 'user').text).replace(/\s+/g, ' ').slice(0, 45);
       cur.ts = Date.now();
-      const saved = { id: cur.id, title: cur.title, ts: cur.ts, msgs: real.map(m => ({ sender: m.sender, text: m.text, cites: m.cites || [] })) };
+      const saved = { id: cur.id, title: cur.title, ts: cur.ts, msgs: real.map(m => ({ sender: m.sender, text: m.text, cites: m.cites || [], sugg: m.sugg || [] })) };
       const i = chats.findIndex(c => c.id === cur.id);
       if (i >= 0) chats[i] = saved; else chats.unshift(saved);
       while (true) {
@@ -2470,11 +2497,11 @@
             const pg = src && (src.pages || []).find(p => p.pageNum === x.p);
             return pg ? { sourceTitle: src.title, pageNum: pg.pageNum, image: pg.image } : null;
           }).filter(Boolean);
-          updateMessage(id, m.text, cp, false);
+          updateMessage(id, m.text, cp, false, m.sugg);
         }
       });
       restoring = false;
-      cur = c ? { id: c.id, title: c.title, ts: c.ts, msgs: c.msgs.map(m => ({ sender: m.sender, text: m.text, cites: m.cites || [] })) } : null;
+      cur = c ? { id: c.id, title: c.title, ts: c.ts, msgs: c.msgs.map(m => ({ sender: m.sender, text: m.text, cites: m.cites || [], sugg: m.sugg || [] })) } : null;
       const b2 = document.getElementById('chatContainer'); b2.scrollTop = b2.scrollHeight;
     }
     function restoreLastChat() {
@@ -2552,13 +2579,14 @@
       return id;
     }
 
-    function updateMessage(id, text, citedPages, autoSpeak) {
+    function updateMessage(id, text, citedPages, autoSpeak, suggestions) {
       const el = document.getElementById(id);
       if (!el) return;
       if (!restoring && msgIndex[id]) {
         const m = msgIndex[id];
         m.text = text; m.loading = false;
         m.cites = (citedPages || []).map(c => ({ t: c.sourceTitle, p: c.pageNum }));
+        m.sugg = (suggestions || []).slice(0, 3);
         persistChat();
         if (m.sender === 'bot') chatSound('receive');
       }
@@ -2578,10 +2606,19 @@
         '</div>';
       }
 
+      let suggHtml = '';
+      if (suggestions && suggestions.length) {
+        suggStore[id] = suggestions.slice(0, 3);
+        suggHtml = '<div class="pt-1.5 flex flex-wrap gap-1.5" role="group" aria-label="أسئلة متابعة مقترحة">' +
+          suggStore[id].map((s, i) => '<button type="button" onclick="quickAskSugg(\'' + id + '\',' + i + ')" aria-label="سؤال مقترح: ' + escapeHtml(s) + '" class="text-[11px] bg-slate-800 border border-slate-700 text-emerald-300 px-2.5 py-2 min-h-[40px] rounded-full active:scale-95">💬 ' + escapeHtml(s) + '</button>').join('') +
+          '</div>';
+      }
+
       el.innerHTML =
         '<span class="sr-only">إجابة باحث: </span>' +
         '<div class="msg-body whitespace-pre-line">' + escapeHtml(text) + '</div>' +
         pagesHtml +
+        suggHtml +
         '<div class="pt-2 border-t border-slate-800 flex items-center justify-between">' +
           '<button type="button" onclick="copyText(\'' + id + '\')" class="text-xs text-slate-300 active:text-white flex items-center gap-1 bg-slate-800 px-3.5 py-2.5 min-h-[44px] rounded-lg">📋 نسخ</button>' +
           '<div class="flex items-center gap-1.5">' +
@@ -2620,6 +2657,12 @@
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    const suggStore = {};
+    function quickAskSugg(id, i) {
+      const s = (suggStore[id] || [])[i];
+      if (s) quickAsk(s);
+    }
+
     function quickAsk(q) {
       document.getElementById('userInput').value = q;
       sendMessage();
@@ -2629,6 +2672,31 @@
       el.style.height = 'auto';
       el.style.height = el.scrollHeight + 'px';
     }
+
+    // إصلاح كيبورد iOS: نثبّت التطبيق على المساحة المرئية. عند فتح الكيبورد يصغّر
+    // iOS نافذة العرض المرئية وأحياناً تبقى الصفحة مزاحة بعد إغلاقه؛ بقفل ارتفاع
+    // الصفحة على الارتفاع المرئي وإعادة تمرير النافذة للصفر يرجع التنسيق دائماً لوضعه الأساسي.
+    (function pinToVisibleViewport() {
+      const body = document.body;
+      function resetScroll() { if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0); }
+      function apply() {
+        resetScroll();
+        const vv = window.visualViewport;
+        if (vv) {
+          const kbOpen = vv.height < window.innerHeight - 120;
+          body.style.height = kbOpen ? Math.round(vv.height) + 'px' : '';
+        }
+        const chat = document.getElementById('chatContainer');
+        if (chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120) chat.scrollTop = chat.scrollHeight;
+      }
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', apply);
+        window.visualViewport.addEventListener('scroll', resetScroll);
+      }
+      window.addEventListener('scroll', resetScroll, { passive: true });
+      window.addEventListener('orientationchange', () => { setTimeout(apply, 250); setTimeout(apply, 700); });
+      document.addEventListener('focusout', () => { setTimeout(apply, 80); setTimeout(apply, 450); });
+    })();
 
     bootApp();
   </script>
