@@ -907,6 +907,7 @@
             </div>
           </div>
           <div class="text-[10px] text-amber-300">${label}</div>
+          ${job && job.status ? `<div id="jst-${src.id}" class="text-[10px] text-slate-300">${escapeHtml(job.status)}</div>` : `<div id="jst-${src.id}" class="text-[10px] text-slate-300"></div>`}
           <div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="نسبة التقدم" class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden"><div class="h-full bg-amber-400" style="width:${pct}%"></div></div>
         </div>`;
       };
@@ -1448,14 +1449,19 @@
     function stopErr(err) { return err && err.failedEngines ? !!err.allQuota : isQuotaError(err); }
     function engineCooled(e) { const l = keyList(e); const n = Date.now(); return l.length > 0 && l.every(k => keyCooldown[k] > n); }
 
+    let aiStatusCb = null;
+    const ocrSlow = {};
+    function aiStatus(t) { try { if (aiStatusCb) aiStatusCb(t); } catch (_) {} }
     async function callAIWithFallback(preferredEngine, promptText, imageDataUrls = [], task = 'chat') {
       let order = [preferredEngine, ...ENGINES.filter(e => e !== preferredEngine)].filter(e => e && keys[e]);
       order = [...order.filter(e => !engineCooled(e)), ...order.filter(e => engineCooled(e))];
+      if (task === 'ocr') { const nw = Date.now(); order = [...order.filter(e => !(ocrSlow[e] > nw)), ...order.filter(e => ocrSlow[e] > nw)]; }
       if (!order.length) throw new Error('لا يوجد محرك مضاف يدعم هذا الطلب. أضف مفتاح API في الإعدادات.');
       const failed = [], errs = [];
       let allQuota = true;
       for (const eng of order) {
         const info = { pos: 0, tries: [] };
+        aiStatus('جاري الطلب عبر ' + (ENGINE_NAMES[eng] || eng) + (errs.length ? ' بعد فشل ' + errs.map(x => ENGINE_NAMES[x.e] || x.e).join(' و') : ''));
         try {
           const text = await callUnifiedAI(eng, promptText, imageDataUrls, task, info);
           if (text && text.trim()) {
@@ -1467,6 +1473,8 @@
         } catch (err) {
           const m = ((err && err.message) || String(err)).slice(0, 200);
           errs.push({ e: eng, m, tries: info.tries }); failed.push(eng);
+          if (/مهلة/.test(m) && task === 'ocr') ocrSlow[eng] = Date.now() + 600000;
+          aiStatus('فشل ' + (ENGINE_NAMES[eng] || eng) + ': ' + m.slice(0, 90));
           if (!isQuotaError(err)) allQuota = false;
         }
       }
@@ -1648,6 +1656,7 @@
         try {
           const dg = diagEng(engine); dg.req++;
           let t;
+          aiStatus('جاري الطلب عبر ' + (ENGINE_NAMES[engine] || engine) + ' (المفتاح ' + (i + 1) + ' من ' + list.length + ')');
           try { t = await callOneKey(engine, list[i], promptText, imageDataUrls); }
           catch (e0) {
             const m0 = (((e0 && e0.message) || String(e0)) + '').slice(0, 220);
@@ -1684,7 +1693,7 @@
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), ms);
       try { return await fetch(url, Object.assign({}, opts, { signal: ctl.signal })); }
-      catch (e) { if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال (90 ثانية). تأكد من الإنترنت وحاول مرة ثانية'); throw e; }
+      catch (e) { if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال (' + Math.round(ms / 1000) + ' ثانية). تأكد من الإنترنت وحاول مرة ثانية'); throw e; }
       finally { clearTimeout(t); }
     }
 
@@ -1734,11 +1743,12 @@
           imageDataUrls.forEach(img => contentPayload.push({ type: 'image_url', image_url: (engine === 'mistral' ? img : { url: img }) }));
         }
         const post = async (model) => {
+          const extra = engine === 'openrouter' ? { max_tokens: 6000 } : (engine === 'deepseek' ? { thinking: { type: 'disabled' }, max_tokens: 8000 } : {});
           const res = await fetchT(cfg.url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-            body: JSON.stringify(Object.assign({ model, messages: [{ role: 'user', content: contentPayload }] }, engine === 'openrouter' ? { max_tokens: 6000 } : {}))
-          });
+            body: JSON.stringify(Object.assign({ model, messages: [{ role: 'user', content: contentPayload }] }, extra))
+          }, imageDataUrls.length ? 75000 : 90000);
           return await apiJson(res);
         };
         let data;
@@ -1867,6 +1877,14 @@
       }
     }
 
+    function setJobStatus(id, t) {
+      const j = liveJobs[id]; if (j) { j.status = t; j.statusAt = Date.now(); }
+      const el = document.getElementById('jst-' + id); if (el) el.textContent = t;
+    }
+    function raceCancel(ctl, p) {
+      let iv; const c = new Promise((_, no) => { iv = setInterval(() => { if (ctl.cancel) no(new Error('أُلغي الاستخراج')); }, 400); });
+      return Promise.race([p, c]).finally(() => clearInterval(iv));
+    }
     async function ocrSource(id) {
       try { await ocrSourceInner(id); }
       catch (e) { delete liveJobs[id]; renderSources(); hideProgress(); notify('❌ خطأ في استخراج النص', (e && e.message) || String(e)); alert('❌ خطأ في استخراج النص: ' + ((e && e.message) || e)); }
@@ -1883,17 +1901,20 @@
       const octl = { kind: 'ocr', paused: false, cancel: false }; liveJobs[id] = octl;
       notify('📝 بدأ استخراج النص', src.title + ' (' + todo.length + ' صفحة بدون نص). ' + (useOffline ? 'يستخدم OCR المدمج (جودته أقل). ' : '') + 'تابعه في قسم قيد التنزيل.');
       renderSources();
+      const t0 = Date.now(); let curTxt = 'يبدأ...';
+      aiStatusCb = t => { curTxt = t; setJobStatus(id, t + ' (0 ث)'); };
+      const tick = setInterval(() => { const el = document.getElementById('jst-' + id); const sec = Math.round((Date.now() - (liveJobs[id] && liveJobs[id].statusAt || t0)) / 1000); const txt = curTxt + ' (' + sec + ' ث)'; if (el) el.textContent = txt; const st = document.getElementById('importStatusText'); if (st && !useOffline) st.textContent = 'OCR: ' + txt; }, 2000);
       for (let g = 0; g < todo.length && !stopped; g += groupSize) {
         if (await ctlGate(octl)) { stopped = true; break; }
         const group = todo.slice(g, g + groupSize);
         showProgress('استخراج النص OCR: ' + src.title + ' (' + Math.min(g + groupSize, todo.length) + '/' + todo.length + ')' + (useOffline ? ' - OCR مدمج' : ' - عبر ' + (ENGINE_NAMES[prefEngine('ocr')] || '')), Math.round(g / todo.length * 100));
         if (!useOffline) {
           try {
-            const parts = await withQuotaRetry(() => runOcrOnPages(group.map(p => p.image), prefEngine('ocr')));
+            const parts = await raceCancel(octl, withTimeout(withQuotaRetry(() => runOcrOnPages(group.map(p => p.image), prefEngine('ocr'))), 420000, 'انتهت مهلة هذه الدفعة (7 دقائق) فتم تخطيها'));
             if (parts.length === group.length) group.forEach((p, i) => { p.text = parts[i] || ''; if (p.text) delete p.ocrLow; });
-            else for (const p of group) { try { p.text = await runOcrOnImage(p.image, prefEngine('ocr')); delete p.ocrLow; } catch (e2) { lastErr = (e2 && e2.message) || String(e2); if (stopErr(e2)) { useOffline = true; break; } } }
+            else for (const p of group) { try { p.text = await raceCancel(octl, withTimeout(runOcrOnImage(p.image, prefEngine('ocr')), 180000, 'انتهت مهلة الصفحة ' + p.pageNum)); delete p.ocrLow; } catch (e2) { lastErr = (e2 && e2.message) || String(e2); if (stopErr(e2)) { useOffline = true; break; } } }
             fails = 0;
-          } catch (err) { fails++; lastErr = (err && err.message) || String(err); if (stopErr(err) || fails >= 2) useOffline = true; }
+          } catch (err) { if (octl.cancel) { stopped = true; break; } fails++; lastErr = (err && err.message) || String(err); setJobStatus(id, '⚠️ تعذرت دفعة الصفحات ' + group[0].pageNum + '-' + group[group.length - 1].pageNum + ': ' + lastErr.slice(0, 140)); notify('⚠️ تعذرت دفعة OCR', 'الصفحات ' + group[0].pageNum + ' إلى ' + group[group.length - 1].pageNum + ': ' + lastErr.slice(0, 160) + (fails >= 2 ? ' - تحويل للـ OCR المدمج.' : ' - سأجرب مرة ثانية.')); if (stopErr(err) || fails >= 2) useOffline = true; else { g -= groupSize; continue; } }
           if (useOffline && !switched) {
             switched = true;
             notify('🔁 التحويل إلى OCR المدمج', 'المحركات ما قدرت تكمل (' + (lastErr || 'غير معروف').slice(0, 100) + '). كملت بدونها بـ OCR المدمج، جودته أقل.');
@@ -1914,6 +1935,7 @@
         }
         await dbPut(src); renderSources();
       }
+      clearInterval(tick); aiStatusCb = null;
       hideProgress();
       await offlineTerminate();
       delete liveJobs[id];
