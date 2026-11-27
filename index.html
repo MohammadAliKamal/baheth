@@ -893,7 +893,8 @@
         } else {
           const t = src.totalPages || 0, n = src.pages ? src.pages.length : 0;
           pct = t ? Math.round(n / t * 100) : 0; live = !!job; paused = live ? job.paused : true;
-          label = (live ? (paused ? '⏸ متوقف مؤقتاً: ' : '⬇️ جاري التنزيل: ') : '⚠️ توقف التنزيل: ') + n + '/' + t + ' صفحة';
+          const q = !live && queuedIds.has(src.id);
+          label = (live ? (paused ? '⏸ متوقف مؤقتاً: ' : '⬇️ جاري التنزيل: ') : (q ? '⏳ في الطابور، سيبدأ تلقائياً بعد الكتاب الحالي، لا تحتاج تضغط شي: ' : '⚠️ توقف التنزيل: ')) + n + '/' + t + ' صفحة';
           resumeAct = live ? "toggleJobPause('" + src.id + "')" : "resumeImport('" + src.id + "')";
         }
         if (src.translating && live) label = (paused ? '⏸ ' : '⏳ ') + label;
@@ -936,7 +937,8 @@
 
       const emptyMsg = (t) => '<div class="text-center text-slate-300 text-[12px] py-6">' + t + '</div>';
       let html = '';
-      if (filesView === 'progress') html = progressing.length ? progressing.map(progRow).join('') : emptyMsg('لا توجد مصادر قيد التحميل أو المعالجة الآن.');
+      const qNew = importQueue.filter(e => !e.srcId).map(e => '<div role="group" aria-label="' + escapeHtml(e.name) + ': في الطابور، سيبدأ تلقائياً" class="bg-slate-900 border border-amber-500/40 rounded-2xl p-3"><p class="text-xs font-bold text-white truncate">📁 ' + escapeHtml(e.name) + '</p><div class="text-[10px] text-amber-300">⏳ في الطابور، سيبدأ تلقائياً بعد الكتاب الحالي</div></div>').join('');
+      if (filesView === 'progress') html = (progressing.length || qNew) ? progressing.map(progRow).join('') + qNew : emptyMsg('لا توجد مصادر قيد التحميل أو المعالجة الآن.');
       else if (filesView === 'translated') html = orderedTr.length ? orderedTr.map(doneRow).join('') : emptyMsg('لا توجد مصادر مترجمة بعد. اضغط زر ترجم على أي مصدر محمل.');
       else html = ordered.length ? ordered.map(doneRow).join('') : emptyMsg('لا توجد مصادر محملة بعد.');
       list.innerHTML = html;
@@ -997,7 +999,7 @@
     function showProgress(text, pct) {
       const wrap = document.getElementById('importProgressWrap');
       wrap.classList.remove('hidden');
-      document.getElementById('importStatusText').textContent = text;
+      document.getElementById('importStatusText').textContent = text + (typeof importQueue !== 'undefined' && importQueue.length ? ' — في الطابور: ' + importQueue.length + ' كتاب' : '');
       document.getElementById('importPercentText').textContent = pct + '%';
       document.getElementById('importProgressBar').style.width = pct + '%';
     }
@@ -1025,15 +1027,30 @@
     const importFiles = new Map();
     const importQueue = [];
 
+    const queuedIds = new Set();
+    function findIncompleteFor(file, prefer) {
+      if (prefer && prefer.complete === false && (prefer.fileSize == null || prefer.fileSize === file.size) && (prefer.title === file.name || prefer.fileSize === file.size)) return prefer;
+      return sources.find(s => s.complete === false && s.title === file.name && (s.fileSize == null || s.fileSize === file.size)) || null;
+    }
+    function enqueueFile(file, prefer) {
+      const src = findIncompleteFor(file, prefer);
+      const entry = { file, auto: !!src, srcId: src ? src.id : null, name: file.name };
+      if (src) { importFiles.set(src.id, file); queuedIds.add(src.id); delete src.importError; dbPut(src).catch(() => {}); }
+      importQueue.push(entry);
+      return entry;
+    }
     async function handleFilesImport(event) {
       const files = Array.from(event.target.files);
       if (!files.length) return;
       const resumeSrc = pendingResumeId ? sources.find(s => s.id === pendingResumeId) : null;
       pendingResumeId = null;
-      files.forEach(f => importQueue.push({ file: f, auto: !!(resumeSrc && resumeSrc.title === f.name) }));
+      files.forEach(f => enqueueFile(f, resumeSrc));
       try { event.target.value = ''; } catch (_) {}
       if (importRunning) {
-        showProgress('أُضيف ' + files.length + ' ملف إلى الطابور، سيبدأ بعد الملف الحالي', 2);
+        const msg = files.length === 1 ? 'تمت إضافة الكتاب «' + files[0].name + '» إلى الطابور. سيبدأ تلقائياً بعد الكتاب الحالي. لا تحتاج تسوي شي.' : 'تمت إضافة ' + files.length + ' كتب إلى الطابور. تبدأ تلقائياً واحد بعد الثاني. لا تحتاج تسوي شي.';
+        showProgress(msg, parseInt(document.getElementById('importPercentText').textContent) || 0);
+        if (window.a11yAnnounce) window.a11yAnnounce(msg);
+        renderSources();
         return;
       }
       await runImportQueue();
@@ -1041,17 +1058,23 @@
 
     function resumeImport(id) {
       const src = sources.find(s => s.id === id);
+      if (queuedIds.has(id)) {
+        const m = '«' + (src ? src.title : 'الكتاب') + '» في الطابور وسيبدأ تلقائياً بعد الكتاب الحالي. لا تحتاج تضغط شي.';
+        if (window.a11yAnnounce) window.a11yAnnounce(m, true);
+        return;
+      }
       const file = importFiles.get(id);
       if (file) {
         if (src) { delete src.importError; dbPut(src).catch(() => {}); }
-        importQueue.push({ file, auto: true });
+        enqueueFile(file, src);
         renderSources();
         if (!importRunning) runImportQueue();
-        else showProgress('أُضيف الكتاب إلى الطابور، سيكمل بعد الملف الحالي', 2);
+        else { const m = '«' + (src ? src.title : 'الكتاب') + '» في الطابور وسيكمل تلقائياً بعد الكتاب الحالي.'; showProgress(m, parseInt(document.getElementById('importPercentText').textContent) || 0); if (window.a11yAnnounce) window.a11yAnnounce(m); }
         return;
       }
+      const stuck = sources.filter(s => s.complete === false && !importFiles.has(s.id) && !liveJobs[s.id] && !queuedIds.has(s.id));
       pendingResumeId = id;
-      alert('لإكمال تنزيل «' + (src ? src.title : 'الكتاب') + '» اختر ملف الكتاب نفسه من تطبيق الملفات. التطبيق انقفل أو انعاد فتحه فنسي مكان الملف. سيكمل من الصفحة ' + (src && src.pages ? src.pages.length + 1 : 1) + ' بدون إعادة ما تم.');
+      alert('لإكمال تنزيل «' + (src ? src.title : 'الكتاب') + '» اختر ملف الكتاب نفسه من تطبيق الملفات. التطبيق انقفل أو انعاد فتحه فنسي مكان الملف.' + (stuck.length > 1 ? ' عندك ' + stuck.length + ' كتب متوقفة: اختر ملفاتها كلها مرة وحدة وتكمل كلها تلقائياً بدون ما تسأل مرة ثانية.' : '') + ' سيكمل من الصفحة ' + (src && src.pages ? src.pages.length + 1 : 1) + ' بدون إعادة ما تم.');
       document.getElementById('fileImporter').click();
     }
 
@@ -1062,10 +1085,12 @@
       let importedCount = 0, total = 0;
       const failures = [];
       while (importQueue.length) {
-        const { file, auto } = importQueue.shift();
+        const { file, auto, srcId } = importQueue.shift();
+        if (srcId) queuedIds.delete(srcId);
         total++;
         const fileLabel = ' (ملف ' + total + (importQueue.length ? ' وباقي ' + importQueue.length : '') + ')';
         showProgress('فهرسة: ' + file.name + fileLabel, 2);
+        if (total > 1 && window.a11yAnnounce) window.a11yAnnounce('بدأ الكتاب التالي: ' + file.name + '. باقي ' + importQueue.length + ' في الطابور.');
         try {
           if (file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')) {
             const text = await file.text();
@@ -1095,6 +1120,7 @@
       }
 
       importRunning = false;
+      queuedIds.clear();
       releaseImportWakeLock();
 
       if (failures.length) {
