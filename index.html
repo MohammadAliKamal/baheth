@@ -486,10 +486,13 @@
       req.onsuccess = () => res(req.result || []);
     });
 
-    const dbPut = (item) => new Promise(res => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(item);
+    const dbPut = (item) => new Promise((res, rej) => {
+      let tx;
+      try { tx = db.transaction(STORE_NAME, 'readwrite'); tx.objectStore(STORE_NAME).put(item); }
+      catch (err) { rej(err); return; }
       tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error || new Error('خطأ كتابة في التخزين'));
+      tx.onabort = () => rej(tx.error || new Error('أُلغيت الكتابة في التخزين (غالباً المساحة ممتلئة)'));
     });
 
     const dbDelete = (id) => new Promise(res => {
@@ -1254,6 +1257,7 @@
       };
 
       const batchSize = 2;
+      let lastSavedCount = pages.length;
       let consecFails = 0;
       const skippedPages = [];
       for (let start = startPage; start <= total; start += batchSize) {
@@ -1292,13 +1296,19 @@
         pages.push(...batchResults);
         pages.sort((a, b) => a.pageNum - b.pageNum);
 
-        stage('حفظ التقدم (' + pages.length + '/' + total + ')...');
-        try { await dbPut(src); }
-        catch (e3) {
-          stopTick();
-          try { pdf.destroy(); } catch (_) {}
-          throw new Error('تعذر حفظ التقدم، غالباً مساحة التخزين ممتلئة (' + ((e3 && e3.message) || 'خطأ') + '). فرّغ مساحة ثم اضغط استئناف ▶️.');
-        }
+        // write the whole book record only every ~10% (min 10 pages): rewriting all
+        // accumulated page images after every batch is quadratic and froze iOS at ~87%
+        if (pages.length - lastSavedCount >= Math.max(10, Math.ceil(pages.length * 0.1)) || start + batchSize > total) {
+          stage('حفظ التقدم (' + pages.length + '/' + total + ')...');
+          try { await withTimeout(dbPut(src), 240000, 'انتهت مهلة الكتابة في التخزين'); lastSavedCount = pages.length; }
+          catch (e3) {
+            stopTick();
+            try { pdf.destroy(); } catch (_) {}
+            let q = '';
+            try { if (navigator.storage && navigator.storage.estimate) { const est = await navigator.storage.estimate(); q = ' المستخدم ' + Math.round((est.usage || 0) / 1048576) + ' من ' + Math.round((est.quota || 0) / 1048576) + ' ميجا.'; } } catch (_) {}
+            throw new Error('تعذر حفظ التقدم (' + ((e3 && e3.message) || 'خطأ') + ').' + q + ' فرّغ مساحة ثم اضغط استئناف ▶️.');
+          }
+        } else { stage('قراءة الصفحات... (' + pages.length + '/' + total + ')'); }
         const pct = Math.min(100, Math.round((pages.length / total) * 100));
         impBase = file.name + fileLabel;
         showProgress(file.name + fileLabel + ' (' + pages.length + '/' + total + ')', pct);
@@ -1314,7 +1324,7 @@
       src.type = hasText ? 'PDF نصي' : 'PDF مصور';
       delete src.fileSize;
       delete src.importError;
-      await dbPut(src);
+      stage('الحفظ النهائي...'); startTick(); try { await withTimeout(dbPut(src), 240000, 'انتهت مهلة الحفظ النهائي'); } finally { stopTick(); }
       importFiles.delete(src.id);
       try { pdf.destroy(); } catch (_) {}
       if (ocrLeft > 0) notify('📷 حُفظ الكتاب بدون استهلاك حصة', file.name + ': ' + ocrLeft + ' صفحة صور محفوظة. اضغط زر 📝 OCR على الكتاب في تبويبة الملفات متى شئت لاستخراج نصها (يكمل من حيث توقف).');
