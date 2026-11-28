@@ -359,11 +359,29 @@
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
       <p class="text-xs font-bold text-white">صوت قراءة الإجابات</p>
       <div class="space-y-1">
+        <label for="ttsEngineSelect" class="text-[11px] font-bold text-slate-300">مصدر الصوت</label>
+        <select id="ttsEngineSelect" onchange="switchTtsEngine(this.value)" aria-label="مصدر صوت قراءة الإجابات" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+          <option value="device">أصوات جهازك (أصوات آبل والنظام)</option>
+          <option value="azure">أصوات مايكروسوفت Azure (جودة أعلى، تحتاج مفتاحاً مجانياً)</option>
+        </select>
+      </div>
+      <div id="azureBox" class="hidden space-y-2 bg-slate-950 border border-slate-800 rounded-xl p-3">
+        <div class="space-y-1">
+          <label for="azureKey" class="text-[11px] font-bold text-sky-400">مفتاح Azure Speech</label>
+          <textarea rows="2" id="azureKey" placeholder="الصق المفتاح هنا" dir="ltr" onchange="saveAzureSettings()" style="-webkit-text-security:disc;resize:vertical;word-break:break-all" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"></textarea>
+        </div>
+        <div class="space-y-1">
+          <label for="azureRegion" class="text-[11px] font-bold text-sky-400">المنطقة (Location/Region)</label>
+          <input type="text" id="azureRegion" placeholder="eastus" dir="ltr" onchange="saveAzureSettings()" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none" />
+        </div>
+        <p class="text-[10px] text-slate-400 leading-relaxed">خطوات الحصول على مفتاح مجاني: ١) افتح موقع portal.azure.com وأنشئ حساباً مجانياً. ٢) من البحث اكتب Speech وافتح Speech services ثم اضغط Create واختر خطة الأسعار المجانية Free F0. ٣) بعد الإنشاء افتح المورد ومن قسم Keys and Endpoint انسخ KEY 1 في الخانة العلوية، واكتب اسم المنطقة (Location) مثل eastus في خانة المنطقة. الخطة المجانية تعطي نحو نصف مليون حرف شهرياً. المفتاح يُحفظ على جهازك فقط ولا يُرسل لأي جهة غير مايكروسوفت.</p>
+      </div>
+      <div class="space-y-1">
         <label for="voiceSelect" class="text-[11px] font-bold text-slate-300">الصوت</label>
         <select id="voiceSelect" onchange="saveTtsSettings()" onfocus="refreshTtsVoices()" aria-label="اختيار صوت قراءة الإجابات" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
           <option value="">الافتراضي للنظام</option>
         </select>
-        <p class="text-[10px] text-slate-400 leading-relaxed">يعرض الأصوات المثبتة على جهازك، ومنها أصوات أبل وأي أصوات أخرى. لإضافة أصوات عربية أفضل على الآيفون: الإعدادات، ثم تسهيلات الاستخدام، ثم المحتوى المنطوق، ثم الأصوات.</p>
+        <p id="voiceHelp" class="text-[10px] text-slate-400 leading-relaxed">يعرض الأصوات المدمجة في جهازك فقط. آبل لا تسمح للمتصفح باستخدام الأصوات المنزّلة (المحسّنة والمميزة) ولا أصوات سيري، فلن تظهر هنا حتى بعد تنزيلها. لأصوات عربية أجود اختر أصوات مايكروسوفت من مصدر الصوت بالأعلى.</p>
       </div>
       <div class="space-y-1">
         <label for="ttsRate" class="text-[11px] font-bold text-slate-300">سرعة القراءة: <span id="ttsRateVal">1x</span></label>
@@ -661,6 +679,11 @@
       ttsVolEl.value = localStorage.getItem('baheth_tts_volume') || '1';
       const vv = document.getElementById('ttsVolumeVal'); if (vv) vv.textContent = Math.round(parseFloat(ttsVolEl.value) * 100) + '٪';
     }
+    { const te = document.getElementById('ttsEngineSelect'); if (te) te.value = localStorage.getItem('baheth_tts_engine') || 'device'; }
+    { const ak = document.getElementById('azureKey'); if (ak) ak.value = localStorage.getItem('baheth_azure_key') || ''; }
+    { const arg = document.getElementById('azureRegion'); if (arg) arg.value = localStorage.getItem('baheth_azure_region') || ''; }
+    { const ab = document.getElementById('azureBox'); if (ab) ab.classList.toggle('hidden', localStorage.getItem('baheth_tts_engine') !== 'azure'); }
+    { const vh = document.getElementById('voiceHelp'); if (vh && localStorage.getItem('baheth_tts_engine') === 'azure') vh.textContent = 'أصوات مايكروسوفت العصبية تعمل من السحابة بجودة عالية ولا تحتاج تنزيل أي صوت على جهازك، وتحتاج اتصال إنترنت أثناء القراءة.'; }
 
     function prefEngine(task) {
       const p = (task === 'ocr' && ocrEngine !== 'auto') ? ocrEngine : activeEngine;
@@ -1771,6 +1794,13 @@
       h += '<section style="margin:12px 0"><h3 style="font-weight:700;font-size:14px;color:#6ee7b7;margin-bottom:4px">OCR المدمج (بدون مفاتيح)</h3><div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px">' +
         row('صفحات تم استخراجها', String(of.pages || 0)) + row('فشل', String(of.fail || 0)) + row('آخر استخدام', fmt(of.lastAt)) +
         (of.lastErr ? row('آخر خطأ', esc(of.lastErr), '#fca5a5') : '') + '<div style="color:#94a3b8">جودته أقل من الذكاء الاصطناعي وقد فيه أخطاء، ويشتغل تلقائياً إذا خلصت كل المفاتيح.</div></div></section>';
+      const az = diag.azure || {};
+      if (az.req) {
+        h += '<section style="margin:12px 0"><h3 style="font-weight:700;font-size:14px;color:#6ee7b7;margin-bottom:4px">🔊 قراءة الإجابات بأصوات مايكروسوفت (Azure)</h3><div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px">' +
+          row('طلبات', String(az.req || 0)) + row('نجح', String(az.ok || 0)) + row('فشل', String(az.fail || 0)) + row('أحرف قُرئت', String(az.chars || 0)) + row('آخر نجاح', fmt(az.lastOkAt)) +
+          (az.lastErr ? row('آخر خطأ (' + fmt(az.lastErrAt) + ')', esc(az.lastErr), '#fca5a5') : '') +
+          '<div style="color:#94a3b8">الخطة المجانية تعطي نحو نصف مليون حرف شهرياً لكل مورد.</div></div></section>';
+      }
       h += '<h2 style="font-weight:700;font-size:14px;margin:12px 0 6px">آخر المهام (كل مهمة لوحدها، ومن خدمها)</h2>';
       if (!diag.log.length) h += '<div style="color:#94a3b8">لا توجد مهام مسجلة بعد.</div>';
       diag.log.slice(0, 25).forEach(l => {
@@ -2394,10 +2424,19 @@
       }
     }
 
-    let ttsVoices = [], ttsVoiceSig = '';
+    let ttsVoices = [], ttsVoiceSig = '', ttsVoiceRetries = 0;
     function refreshTtsVoices() {
+      if (ttsEngineIsAzure()) {
+        const azSel = document.getElementById('voiceSelect');
+        if (!azSel) return;
+        const savedAz = localStorage.getItem('baheth_tts_voice_azure') || '';
+        azSel.innerHTML = AZURE_VOICES.map((v) => '<option value="' + v.id + '"' + (v.id === savedAz ? ' selected' : '') + '>' + v.label + '</option>').join('');
+        return;
+      }
       if (!('speechSynthesis' in window)) return;
       const list = window.speechSynthesis.getVoices() || [];
+      if (!list.length && ttsVoiceRetries < 8) { ttsVoiceRetries++; setTimeout(refreshTtsVoices, 600); return; }
+      ttsVoiceRetries = 0;
       const sig = list.map((v) => v.name + '|' + v.lang).join('~');
       const sel = document.getElementById('voiceSelect');
       if (sig === ttsVoiceSig && sel && sel.options.length > 0) { ttsVoices = list; return; }
@@ -2433,29 +2472,209 @@
     }
     function speakText(id) {
       const el = document.getElementById(id);
-      if (!el || !('speechSynthesis' in window)) return;
+      if (!el) return;
+      const body = el.querySelector('.msg-body');
+      const text = body ? body.innerText : '';
+      if (!text.trim()) return;
+      if (ttsEngineIsAzure()) { speakAzure(text); return; }
+      if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
-      const u = applyTtsSettings(new SpeechSynthesisUtterance(el.querySelector('.msg-body').innerText));
+      const u = applyTtsSettings(new SpeechSynthesisUtterance(text));
       window.speechSynthesis.speak(u);
     }
     function stopSpeaking(silent) {
+      azureStopSpeak();
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       if (!silent && typeof announce === 'function') announce('توقفت القراءة الصوتية');
     }
     function testVoice() {
-      if (!('speechSynthesis' in window)) { alert('القراءة الصوتية غير مدعومة على هذا الجهاز.'); return; }
       saveTtsSettings();
+      if (ttsEngineIsAzure()) { speakAzure('هذا اختبار لصوت القراءة في تطبيق باحث. يمكنك تغيير الصوت والسرعة ومستوى الصوت من هذه الإعدادات.'); return; }
+      if (!('speechSynthesis' in window)) { alert('القراءة الصوتية غير مدعومة على هذا الجهاز.'); return; }
       window.speechSynthesis.cancel();
       const u = applyTtsSettings(new SpeechSynthesisUtterance('هذا اختبار لصوت القراءة في تطبيق باحث. يمكنك تغيير الصوت والسرعة ومستوى الصوت من هذه الإعدادات.'));
       window.speechSynthesis.speak(u);
     }
     function saveTtsSettings() {
       const vs = document.getElementById('voiceSelect');
-      if (vs && (vs.value || vs.options.length > 1)) localStorage.setItem('baheth_tts_voice', vs.value);
+      if (vs && (vs.value || vs.options.length > 1)) localStorage.setItem(ttsEngineIsAzure() ? 'baheth_tts_voice_azure' : 'baheth_tts_voice', vs.value);
       const r = document.getElementById('ttsRate'), v = document.getElementById('ttsVolume');
       if (r) { localStorage.setItem('baheth_tts_rate', r.value); const rv = document.getElementById('ttsRateVal'); if (rv) rv.textContent = r.value + 'x'; }
       if (v) { localStorage.setItem('baheth_tts_volume', v.value); const vv = document.getElementById('ttsVolumeVal'); if (vv) vv.textContent = Math.round(parseFloat(v.value) * 100) + '٪'; }
     }
+
+    const DEVICE_VOICE_HELP = 'يعرض الأصوات المدمجة في جهازك فقط. آبل لا تسمح للمتصفح باستخدام الأصوات المنزّلة (المحسّنة والمميزة) ولا أصوات سيري، فلن تظهر هنا حتى بعد تنزيلها. لأصوات عربية أجود اختر أصوات مايكروسوفت من مصدر الصوت بالأعلى.';
+    const AZURE_VOICE_HELP = 'أصوات مايكروسوفت العصبية تعمل من السحابة بجودة عالية ولا تحتاج تنزيل أي صوت على جهازك، وتحتاج اتصال إنترنت أثناء القراءة.';
+    const AZURE_VOICES = [
+      { id: 'ar-KW-FahedNeural', label: 'فهد (كويتي، رجل)' },
+      { id: 'ar-KW-NouraNeural', label: 'نورة (كويتية، امرأة)' },
+      { id: 'ar-SA-HamedNeural', label: 'حامد (سعودي، رجل)' },
+      { id: 'ar-SA-ZariyahNeural', label: 'زارية (سعودية، امرأة)' },
+      { id: 'ar-EG-ShakirNeural', label: 'شاكر (مصري، رجل)' },
+      { id: 'ar-EG-SalmaNeural', label: 'سلمى (مصرية، امرأة)' },
+      { id: 'ar-AE-HamdanNeural', label: 'حمدان (إماراتي، رجل)' },
+      { id: 'ar-AE-FatimaNeural', label: 'فاطمة (إماراتية، امرأة)' },
+      { id: 'ar-QA-MoazNeural', label: 'معاذ (قطري، رجل)' },
+      { id: 'ar-QA-AmalNeural', label: 'أمل (قطرية، امرأة)' },
+      { id: 'ar-BH-AliNeural', label: 'علي (بحريني، رجل)' },
+      { id: 'ar-BH-LailaNeural', label: 'ليلى (بحرينية، امرأة)' },
+      { id: 'ar-OM-AbdullahNeural', label: 'عبدالله (عماني، رجل)' },
+      { id: 'ar-OM-AyshaNeural', label: 'عائشة (عمانية، امرأة)' },
+      { id: 'ar-JO-TaimNeural', label: 'تيم (أردني، رجل)' },
+      { id: 'ar-JO-SanaNeural', label: 'سناء (أردنية، امرأة)' },
+      { id: 'ar-IQ-BasselNeural', label: 'باسل (عراقي، رجل)' },
+      { id: 'ar-IQ-RanaNeural', label: 'رنا (عراقية، امرأة)' },
+      { id: 'ar-LB-RamiNeural', label: 'رامي (لبناني، رجل)' },
+      { id: 'ar-LB-LaylaNeural', label: 'ليلى (لبنانية، امرأة)' },
+      { id: 'ar-SY-LaithNeural', label: 'ليث (سوري، رجل)' },
+      { id: 'ar-SY-AmanyNeural', label: 'أماني (سورية، امرأة)' },
+      { id: 'ar-MA-JamalNeural', label: 'جمال (مغربي، رجل)' },
+      { id: 'ar-MA-MounaNeural', label: 'منى (مغربية، امرأة)' },
+      { id: 'ar-DZ-IsmaelNeural', label: 'إسماعيل (جزائري، رجل)' },
+      { id: 'ar-DZ-AminaNeural', label: 'أمينة (جزائرية، امرأة)' },
+      { id: 'ar-TN-HediNeural', label: 'هادي (تونسي، رجل)' },
+      { id: 'ar-TN-ReemNeural', label: 'ريم (تونسية، امرأة)' },
+      { id: 'ar-LY-OmarNeural', label: 'عمر (ليبي، رجل)' },
+      { id: 'ar-LY-ImanNeural', label: 'إيمان (ليبية، امرأة)' },
+      { id: 'ar-YE-SalehNeural', label: 'صالح (يمني، رجل)' },
+      { id: 'ar-YE-MaryamNeural', label: 'مريم (يمنية، امرأة)' }
+    ];
+    function ttsEngineIsAzure() { return localStorage.getItem('baheth_tts_engine') === 'azure'; }
+    function switchTtsEngine(v) {
+      stopSpeaking(true);
+      localStorage.setItem('baheth_tts_engine', v === 'azure' ? 'azure' : 'device');
+      const box = document.getElementById('azureBox');
+      if (box) box.classList.toggle('hidden', v !== 'azure');
+      const help = document.getElementById('voiceHelp');
+      if (help) help.textContent = v === 'azure' ? AZURE_VOICE_HELP : DEVICE_VOICE_HELP;
+      refreshTtsVoices();
+      if (window.a11yAnnounce) window.a11yAnnounce(v === 'azure' ? 'اخترت أصوات مايكروسوفت. أدخل المفتاح والمنطقة ثم اختر الصوت.' : 'اخترت أصوات جهازك.', false);
+    }
+    function saveAzureSettings() {
+      const k = document.getElementById('azureKey'), r = document.getElementById('azureRegion');
+      if (k) { const v = String(k.value || '').replace(/[^\x21-\x7E]/g, ''); if (k.value !== v) k.value = v; localStorage.setItem('baheth_azure_key', v); }
+      if (r) { const v = String(r.value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); if (r.value !== v) r.value = v; localStorage.setItem('baheth_azure_region', v); }
+    }
+    function azureCfg() {
+      return { key: localStorage.getItem('baheth_azure_key') || '', region: (localStorage.getItem('baheth_azure_region') || '').toLowerCase() };
+    }
+    function chunkArabic(text, maxLen) {
+      const clean = String(text || '').replace(/\s+/g, ' ').trim();
+      if (!clean) return [];
+      const sents = clean.match(/[^.!؟?؛:،]+[.!؟?؛:،]*/g) || [clean];
+      const chunks = [];
+      let cur = '';
+      sents.forEach((s0) => {
+        let s = s0.trim();
+        if (!s) return;
+        while (s.length > maxLen) {
+          let cut = s.lastIndexOf(' ', maxLen);
+          if (cut < maxLen * 0.5) cut = maxLen;
+          const head = s.slice(0, cut).trim();
+          s = s.slice(cut).trim();
+          if (cur) { chunks.push(cur); cur = ''; }
+          if (head) chunks.push(head);
+        }
+        if (!s) return;
+        if ((cur ? cur.length + 1 + s.length : s.length) > maxLen) { if (cur) chunks.push(cur); cur = s; }
+        else cur = cur ? cur + ' ' + s : s;
+      });
+      if (cur) chunks.push(cur);
+      return chunks;
+    }
+    function azureSsml(text, voiceId, ratePct, volPct) {
+      const esc = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const lang = (voiceId || 'ar-SA').slice(0, 5);
+      return '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="' + lang + '"><voice name="' + voiceId + '"><prosody rate="' + ratePct + '" volume="' + volPct + '">' + esc + '</prosody></voice></speak>';
+    }
+    function azureErrMsg(status) {
+      if (status === 401) return 'مفتاح Azure غير صحيح. انسخ KEY 1 كاملاً من صفحة المورد في بوابة Azure.';
+      if (status === 403) return 'المنطقة غير مطابقة للمفتاح. اكتب نفس Location الظاهرة في صفحة المورد (مثل eastus).';
+      if (status === 429) return 'انتهت الحصة المجانية أو تجاوزت الحد المسموح. حصة الخطة المجانية تتجدد كل شهر.';
+      if (status === 400) return 'رفضت الخدمة الطلب. جرّب صوتاً آخر من القائمة.';
+      return 'خطأ من خدمة مايكروسوفت الصوتية (رمز ' + status + ').';
+    }
+    async function azureFetchAudio(cfg, ssml) {
+      const url = 'https://' + cfg.region + '.tts.speech.microsoft.com/cognitiveservices/v1';
+      let res;
+      try {
+        res = await fetch(url, { method: 'POST', headers: { 'Ocp-Apim-Subscription-Key': cfg.key, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3' }, body: ssml });
+      } catch (e) {
+        throw new Error('تعذر الاتصال بخدمة مايكروسوفت الصوتية. تأكد من اتصال الإنترنت.');
+      }
+      if (!res.ok) { const err = new Error(azureErrMsg(res.status)); err.status = res.status; throw err; }
+      const blob = await res.blob();
+      if (!blob.size) throw new Error('وصل صوت فارغ من الخدمة. جرّب صوتاً آخر.');
+      return URL.createObjectURL(blob);
+    }
+    let azureAudio = null, azureCancelled = false, azurePlaying = false, azureRunId = 0;
+    function azureStopSpeak() {
+      azureCancelled = true;
+      azureRunId++;
+      azurePlaying = false;
+      if (azureAudio) { try { azureAudio.pause(); } catch (_) {} }
+    }
+    async function speakAzure(text) {
+      saveAzureSettings();
+      const cfg = azureCfg();
+      if (!cfg.key) { alert('أصوات مايكروسوفت تحتاج مفتاح Azure Speech. من الإعدادات: أدخل المفتاح والمنطقة ثم جرّب. خطوات الحصول على مفتاح مجاني مكتوبة تحت خانة المفتاح.'); return; }
+      if (!cfg.region) { alert('أدخل منطقة مورد Azure (مثل eastus) من الإعدادات.'); return; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      azureStopSpeak();
+      azureCancelled = false;
+      const myRun = azureRunId;
+      const chunks = chunkArabic(text, 600);
+      if (!chunks.length) return;
+      const rate = parseFloat(localStorage.getItem('baheth_tts_rate') || '1');
+      const vol = parseFloat(localStorage.getItem('baheth_tts_volume') || '1');
+      const voiceId = localStorage.getItem('baheth_tts_voice_azure') || AZURE_VOICES[0].id;
+      const rp = Math.round(((isNaN(rate) ? 1 : rate) - 1) * 10000) / 100;
+      const ratePct = (rp >= 0 ? '+' : '') + rp.toFixed(2) + '%';
+      const vp = Math.round(((isNaN(vol) ? 1 : vol) - 1) * 10000) / 100;
+      const volPct = (vp >= 0 ? '+' : '') + vp.toFixed(2) + '%';
+      const dz = diagAzure();
+      const promised = {};
+      const fetchChunk = (i) => promised[i] || (promised[i] = (async () => {
+        dz.req++; saveDiag();
+        const u = await azureFetchAudio(cfg, azureSsml(chunks[i], voiceId, ratePct, volPct));
+        dz.ok++; dz.chars = (dz.chars || 0) + chunks[i].length; dz.lastOkAt = Date.now(); saveDiag();
+        return u;
+      })());
+      azurePlaying = true;
+      if (typeof announce === 'function') announce('جاري تجهيز الصوت من مايكروسوفت...');
+      const urls = [];
+      try {
+        let nextP = fetchChunk(0);
+        for (let i = 0; i < chunks.length; i++) {
+          if (azureCancelled || myRun !== azureRunId) break;
+          let url;
+          try {
+            url = await nextP;
+          } catch (e) {
+            dz.fail++; dz.lastErr = String(e && e.message || e).slice(0, 200); dz.lastErrAt = Date.now(); saveDiag();
+            alert('❌ ' + (e && e.message ? e.message : 'تعذر جلب الصوت من مايكروسوفت.'));
+            break;
+          }
+          urls.push(url);
+          if (azureCancelled || myRun !== azureRunId) break;
+          if (i + 1 < chunks.length) nextP = fetchChunk(i + 1);
+          await new Promise((resolve) => {
+            if (!azureAudio) azureAudio = new Audio();
+            const a = azureAudio;
+            a.onended = resolve;
+            a.onerror = () => resolve();
+            a.src = url;
+            try { a.volume = vol >= 0 && vol <= 1 ? vol : 1; } catch (_) {}
+            const pr = a.play();
+            if (pr && pr.catch) pr.catch(() => resolve());
+          });
+        }
+      } finally {
+        if (myRun === azureRunId) azurePlaying = false;
+        setTimeout(() => urls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) {} }), 30000);
+      }
+    }
+    function diagAzure() { return diag.azure || (diag.azure = { req: 0, ok: 0, fail: 0, chars: 0, lastErr: '', lastErrAt: 0, lastOkAt: 0 }); }
 
     function handleKey(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -2893,7 +3112,7 @@
         if (last) {
           announce('وصلت الإجابة');
           const chatVisible = $('tab-chat') && !$('tab-chat').classList.contains('hidden');
-          if (chatVisible && !trapActive() && !(window.speechSynthesis && window.speechSynthesis.speaking)) {
+          if (chatVisible && !trapActive() && !(window.speechSynthesis && window.speechSynthesis.speaking) && !azurePlaying) {
             setTimeout(() => { try { last.focus({ preventScroll: true }); } catch (_) {} }, 1000);
           }
         }
@@ -3003,7 +3222,7 @@
   });
 
   // ---------- تحسين العناصر تلقائياً ----------
-  const SEL_LABELS = { activeEngineSelect: 'محرك الذكاء الاصطناعي للدردشة والترجمة', answerModeSelect: 'وضع الإجابة', ocrEngineSelect: 'محرك تحويل الكتب والصور إلى نص OCR', targetLangSelect: 'لغة الترجمة' };
+  const SEL_LABELS = { activeEngineSelect: 'محرك الذكاء الاصطناعي للدردشة والترجمة', answerModeSelect: 'وضع الإجابة', ocrEngineSelect: 'محرك تحويل الكتب والصور إلى نص OCR', targetLangSelect: 'لغة الترجمة', ttsEngineSelect: 'مصدر صوت قراءة الإجابات' };
   const INP_LABELS = { userInput: 'اكتب سؤالك هنا', urlInput: 'رابط المقالة', ytInput: 'رابط فيديو يوتيوب', pasteTitleInput: 'عنوان المصدر', pasteContentInput: 'النص المراد إضافته كمصدر' };
   const BTN_LABELS = { sendBtn: 'إرسال السؤال', micBtn: 'إملاء السؤال بالصوت' };
   let uid = 0;
