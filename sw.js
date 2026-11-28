@@ -1,4 +1,4 @@
-const CACHE_NAME = 'baheth-ios-v26';
+const CACHE_NAME = 'baheth-ios-v27';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
