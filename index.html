@@ -362,6 +362,7 @@
         <label for="ttsEngineSelect" class="text-[11px] font-bold text-slate-300">مصدر الصوت</label>
         <select id="ttsEngineSelect" onchange="switchTtsEngine(this.value)" aria-label="مصدر صوت قراءة الإجابات" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
           <option value="device">أصوات جهازك (أصوات آبل والنظام)</option>
+          <option value="gemini">أصوات جوجل Gemini (جودة عالية، بنفس مفاتيح Gemini، بدون بطاقة)</option>
           <option value="azure">أصوات مايكروسوفت Azure (جودة أعلى، تحتاج مفتاحاً مجانياً)</option>
         </select>
       </div>
@@ -381,7 +382,7 @@
         <select id="voiceSelect" onchange="saveTtsSettings()" onfocus="refreshTtsVoices()" aria-label="اختيار صوت قراءة الإجابات" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
           <option value="">الافتراضي للنظام</option>
         </select>
-        <p id="voiceHelp" class="text-[10px] text-slate-400 leading-relaxed">يعرض الأصوات المدمجة في جهازك فقط. آبل لا تسمح للمتصفح باستخدام الأصوات المنزّلة (المحسّنة والمميزة) ولا أصوات سيري، فلن تظهر هنا حتى بعد تنزيلها. لأصوات عربية أجود اختر أصوات مايكروسوفت من مصدر الصوت بالأعلى.</p>
+        <p id="voiceHelp" class="text-[10px] text-slate-400 leading-relaxed">يعرض الأصوات المدمجة في جهازك فقط. آبل لا تسمح للمتصفح باستخدام الأصوات المنزّلة (المحسّنة والمميزة) ولا أصوات سيري، فلن تظهر هنا حتى بعد تنزيلها. لأصوات عربية أجود اختر أصوات جوجل Gemini (بدون بطاقة) أو مايكروسوفت من مصدر الصوت بالأعلى.</p>
       </div>
       <div class="space-y-1">
         <label for="ttsRate" class="text-[11px] font-bold text-slate-300">سرعة القراءة: <span id="ttsRateVal">1x</span></label>
@@ -683,6 +684,7 @@
     { const ak = document.getElementById('azureKey'); if (ak) ak.value = localStorage.getItem('baheth_azure_key') || ''; }
     { const arg = document.getElementById('azureRegion'); if (arg) arg.value = localStorage.getItem('baheth_azure_region') || ''; }
     { const ab = document.getElementById('azureBox'); if (ab) ab.classList.toggle('hidden', localStorage.getItem('baheth_tts_engine') !== 'azure'); }
+    { const vh2 = document.getElementById('voiceHelp'); if (vh2 && localStorage.getItem('baheth_tts_engine') === 'gemini') vh2.textContent = 'أصوات جوجل Gemini تقرأ العربية بجودة عالية وتستخدم نفس مفاتيح Gemini المضافة في التطبيق، وتحتاج اتصال إنترنت أثناء القراءة. حصتها المجانية يومية وتتجدد نحو الساعة 11 صباحاً بتوقيت الكويت.'; }
     { const vh = document.getElementById('voiceHelp'); if (vh && localStorage.getItem('baheth_tts_engine') === 'azure') vh.textContent = 'أصوات مايكروسوفت العصبية تعمل من السحابة بجودة عالية ولا تحتاج تنزيل أي صوت على جهازك، وتحتاج اتصال إنترنت أثناء القراءة.'; }
 
     function prefEngine(task) {
@@ -1801,6 +1803,13 @@
           (az.lastErr ? row('آخر خطأ (' + fmt(az.lastErrAt) + ')', esc(az.lastErr), '#fca5a5') : '') +
           '<div style="color:#94a3b8">الخطة المجانية تعطي نحو نصف مليون حرف شهرياً لكل مورد.</div></div></section>';
       }
+      const gt = diag.gtts || {};
+      if (gt.req) {
+        h += '<section style="margin:12px 0"><h3 style="font-weight:700;font-size:14px;color:#6ee7b7;margin-bottom:4px">🔊 قراءة الإجابات بأصوات جوجل (Gemini)</h3><div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px">' +
+          row('طلبات', String(gt.req || 0)) + row('نجح', String(gt.ok || 0)) + row('فشل', String(gt.fail || 0)) + row('أحرف قُرئت', String(gt.chars || 0)) + row('النموذج الذي اشتغل', esc(gt.model || '-')) + row('آخر نجاح', fmt(gt.lastOkAt)) +
+          (gt.lastErr ? row('آخر خطأ (' + fmt(gt.lastErrAt) + ')', esc(gt.lastErr), '#fca5a5') : '') +
+          '<div style="color:#94a3b8">الحصة المجانية يومية وتتجدد نحو 11 صباحاً بتوقيت الكويت، ولا تؤثر على حصة الدردشة بالضرورة.</div></div></section>';
+      }
       h += '<h2 style="font-weight:700;font-size:14px;margin:12px 0 6px">آخر المهام (كل مهمة لوحدها، ومن خدمها)</h2>';
       if (!diag.log.length) h += '<div style="color:#94a3b8">لا توجد مهام مسجلة بعد.</div>';
       diag.log.slice(0, 25).forEach(l => {
@@ -2426,6 +2435,13 @@
 
     let ttsVoices = [], ttsVoiceSig = '', ttsVoiceRetries = 0;
     function refreshTtsVoices() {
+      if (ttsEngineIsGemini()) {
+        const gSel = document.getElementById('voiceSelect');
+        if (!gSel) return;
+        const savedG = localStorage.getItem('baheth_tts_voice_gemini') || GEMINI_TTS_VOICES[0].id;
+        gSel.innerHTML = GEMINI_TTS_VOICES.map((v) => '<option value="' + v.id + '"' + (v.id === savedG ? ' selected' : '') + '>' + v.label + '</option>').join('');
+        return;
+      }
       if (ttsEngineIsAzure()) {
         const azSel = document.getElementById('voiceSelect');
         if (!azSel) return;
@@ -2476,6 +2492,7 @@
       const body = el.querySelector('.msg-body');
       const text = body ? body.innerText : '';
       if (!text.trim()) return;
+      if (ttsEngineIsGemini()) { speakGemini(text); return; }
       if (ttsEngineIsAzure()) { speakAzure(text); return; }
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
@@ -2489,6 +2506,7 @@
     }
     function testVoice() {
       saveTtsSettings();
+      if (ttsEngineIsGemini()) { speakGemini('هذا اختبار لصوت القراءة في تطبيق باحث. يمكنك تغيير الصوت والسرعة ومستوى الصوت من هذه الإعدادات.'); return; }
       if (ttsEngineIsAzure()) { speakAzure('هذا اختبار لصوت القراءة في تطبيق باحث. يمكنك تغيير الصوت والسرعة ومستوى الصوت من هذه الإعدادات.'); return; }
       if (!('speechSynthesis' in window)) { alert('القراءة الصوتية غير مدعومة على هذا الجهاز.'); return; }
       window.speechSynthesis.cancel();
@@ -2497,13 +2515,13 @@
     }
     function saveTtsSettings() {
       const vs = document.getElementById('voiceSelect');
-      if (vs && (vs.value || vs.options.length > 1)) localStorage.setItem(ttsEngineIsAzure() ? 'baheth_tts_voice_azure' : 'baheth_tts_voice', vs.value);
+      if (vs && (vs.value || vs.options.length > 1)) localStorage.setItem(ttsEngineIsGemini() ? 'baheth_tts_voice_gemini' : (ttsEngineIsAzure() ? 'baheth_tts_voice_azure' : 'baheth_tts_voice'), vs.value);
       const r = document.getElementById('ttsRate'), v = document.getElementById('ttsVolume');
       if (r) { localStorage.setItem('baheth_tts_rate', r.value); const rv = document.getElementById('ttsRateVal'); if (rv) rv.textContent = r.value + 'x'; }
       if (v) { localStorage.setItem('baheth_tts_volume', v.value); const vv = document.getElementById('ttsVolumeVal'); if (vv) vv.textContent = Math.round(parseFloat(v.value) * 100) + '٪'; }
     }
 
-    const DEVICE_VOICE_HELP = 'يعرض الأصوات المدمجة في جهازك فقط. آبل لا تسمح للمتصفح باستخدام الأصوات المنزّلة (المحسّنة والمميزة) ولا أصوات سيري، فلن تظهر هنا حتى بعد تنزيلها. لأصوات عربية أجود اختر أصوات مايكروسوفت من مصدر الصوت بالأعلى.';
+    const DEVICE_VOICE_HELP = 'يعرض الأصوات المدمجة في جهازك فقط. آبل لا تسمح للمتصفح باستخدام الأصوات المنزّلة (المحسّنة والمميزة) ولا أصوات سيري، فلن تظهر هنا حتى بعد تنزيلها. لأصوات عربية أجود اختر أصوات جوجل Gemini (بدون بطاقة) أو مايكروسوفت من مصدر الصوت بالأعلى.';
     const AZURE_VOICE_HELP = 'أصوات مايكروسوفت العصبية تعمل من السحابة بجودة عالية ولا تحتاج تنزيل أي صوت على جهازك، وتحتاج اتصال إنترنت أثناء القراءة.';
     const AZURE_VOICES = [
       { id: 'ar-KW-FahedNeural', label: 'فهد (كويتي، رجل)' },
@@ -2542,13 +2560,13 @@
     function ttsEngineIsAzure() { return localStorage.getItem('baheth_tts_engine') === 'azure'; }
     function switchTtsEngine(v) {
       stopSpeaking(true);
-      localStorage.setItem('baheth_tts_engine', v === 'azure' ? 'azure' : 'device');
+      localStorage.setItem('baheth_tts_engine', v === 'azure' ? 'azure' : (v === 'gemini' ? 'gemini' : 'device'));
       const box = document.getElementById('azureBox');
       if (box) box.classList.toggle('hidden', v !== 'azure');
       const help = document.getElementById('voiceHelp');
-      if (help) help.textContent = v === 'azure' ? AZURE_VOICE_HELP : DEVICE_VOICE_HELP;
+      if (help) help.textContent = v === 'azure' ? AZURE_VOICE_HELP : (v === 'gemini' ? GEMINI_VOICE_HELP : DEVICE_VOICE_HELP);
       refreshTtsVoices();
-      if (window.a11yAnnounce) window.a11yAnnounce(v === 'azure' ? 'اخترت أصوات مايكروسوفت. أدخل المفتاح والمنطقة ثم اختر الصوت.' : 'اخترت أصوات جهازك.', false);
+      if (window.a11yAnnounce) window.a11yAnnounce(v === 'azure' ? 'اخترت أصوات مايكروسوفت. أدخل المفتاح والمنطقة ثم اختر الصوت.' : (v === 'gemini' ? 'اخترت أصوات جوجل. اختر الصوت من القائمة ثم اضغط تجربة الصوت.' : 'اخترت أصوات جهازك.'), false);
     }
     function saveAzureSettings() {
       const k = document.getElementById('azureKey'), r = document.getElementById('azureRegion');
@@ -2675,6 +2693,204 @@
       }
     }
     function diagAzure() { return diag.azure || (diag.azure = { req: 0, ok: 0, fail: 0, chars: 0, lastErr: '', lastErrAt: 0, lastOkAt: 0 }); }
+
+    // ===== قراءة بأصوات جوجل Gemini TTS (بنفس مفاتيح Gemini الموجودة) =====
+    const GEMINI_TTS_VOICES = [
+      { id: 'Kore', label: 'Kore (كوري، حازم)' },
+      { id: 'Sulafat', label: 'Sulafat (سلافة، دافئ)' },
+      { id: 'Charon', label: 'Charon (شارون، إخباري)' },
+      { id: 'Achird', label: 'Achird (أخيرد، ودود)' },
+      { id: 'Zephyr', label: 'Zephyr (زيفير، مشرق)' },
+      { id: 'Puck', label: 'Puck (باك، حيوي)' },
+      { id: 'Fenrir', label: 'Fenrir (فنرير، متحمس)' },
+      { id: 'Leda', label: 'Leda (ليدا، شبابي)' },
+      { id: 'Orus', label: 'Orus (أورس، حازم)' },
+      { id: 'Aoede', label: 'Aoede (أويدي، منعش)' },
+      { id: 'Callirrhoe', label: 'Callirrhoe (كاليرو، مريح)' },
+      { id: 'Autonoe', label: 'Autonoe (أوتونوي، مشرق)' },
+      { id: 'Enceladus', label: 'Enceladus (إنسيلادوس، هادئ النفس)' },
+      { id: 'Iapetus', label: 'Iapetus (يابيتوس، واضح)' },
+      { id: 'Umbriel', label: 'Umbriel (أومبريل، مريح)' },
+      { id: 'Algieba', label: 'Algieba (الجيبة، ناعم)' },
+      { id: 'Despina', label: 'Despina (ديسبينا، ناعم)' },
+      { id: 'Erinome', label: 'Erinome (إرينومي، واضح)' },
+      { id: 'Algenib', label: 'Algenib (الجنب، خشن)' },
+      { id: 'Rasalgethi', label: 'Rasalgethi (رأس الجاثي، إخباري)' },
+      { id: 'Laomedeia', label: 'Laomedeia (لاوميديا، حيوي)' },
+      { id: 'Achernar', label: 'Achernar (آخر النهر، هادئ)' },
+      { id: 'Alnilam', label: 'Alnilam (النظام، حازم)' },
+      { id: 'Schedar', label: 'Schedar (شدر، متزن)' },
+      { id: 'Gacrux', label: 'Gacrux (جاكروكس، ناضج)' },
+      { id: 'Pulcherrima', label: 'Pulcherrima (بولكريما، صريح)' },
+      { id: 'Zubenelgenubi', label: 'Zubenelgenubi (زبانا الجنوبي، عفوي)' },
+      { id: 'Vindemiatrix', label: 'Vindemiatrix (قاطفة العنب، لطيف)' },
+      { id: 'Sadachbia', label: 'Sadachbia (سعد الأخبية، نشيط)' },
+      { id: 'Sadaltager', label: 'Sadaltager (سعد التاجر، واسع المعرفة)' }
+    ];
+    const GEMINI_TTS_MODELS = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
+    const GEMINI_VOICE_HELP = 'أصوات جوجل Gemini تقرأ العربية بجودة عالية وتستخدم نفس مفاتيح Gemini المضافة في التطبيق (لا تحتاج مفتاحاً جديداً ولا بطاقة). تعمل من الإنترنت، وحصتها المجانية يومية وتتجدد نحو الساعة 11 صباحاً بتوقيت الكويت. التحكم بالسرعة يتم من شريط السرعة بالأسفل.';
+    function ttsEngineIsGemini() { return localStorage.getItem('baheth_tts_engine') === 'gemini'; }
+    function diagGemTts() { return diag.gtts || (diag.gtts = { req: 0, ok: 0, fail: 0, chars: 0, lastErr: '', lastErrAt: 0, lastOkAt: 0, model: '' }); }
+    let gttsCool = {};
+    try { gttsCool = JSON.parse(localStorage.getItem('baheth_gtts_cool') || '{}') || {}; } catch (_) { gttsCool = {}; }
+    { const n0 = Date.now(); Object.keys(gttsCool).forEach((k) => { if (!(gttsCool[k] > n0)) delete gttsCool[k]; }); }
+    function saveGttsCool() { try { localStorage.setItem('baheth_gtts_cool', JSON.stringify(gttsCool)); } catch (_) {} }
+    const gttsModelDead = {};
+    let gttsCursor = 0;
+    function pcmToWavBlob(bytes, rate) {
+      const h = new ArrayBuffer(44), v = new DataView(h);
+      const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + bytes.length, true); w(8, 'WAVE'); w(12, 'fmt ');
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      w(36, 'data'); v.setUint32(40, bytes.length, true);
+      return new Blob([h, bytes], { type: 'audio/wav' });
+    }
+    function b64ToBytes(b64) {
+      const bin = atob(b64), out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    // يرجع {kind:'ok', url} أو يرمي خطأ فيه kind: quota | daily | bad | model | net | empty
+    async function geminiTtsOnce(model, key, text, voice) {
+      const ctl = new AbortController();
+      const tm = setTimeout(() => ctl.abort(), 70000);
+      let res;
+      try {
+        res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text }] }],
+            generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
+          }),
+          signal: ctl.signal
+        });
+      } catch (e) {
+        const er = new Error(e && e.name === 'AbortError' ? 'انتهت مهلة الانتظار لخدمة جوجل الصوتية.' : 'تعذر الاتصال بخدمة جوجل الصوتية. تأكد من اتصال الإنترنت.');
+        er.kind = 'net'; throw er;
+      } finally { clearTimeout(tm); }
+      let data = null, raw = '';
+      try { raw = await res.text(); data = JSON.parse(raw); } catch (_) {}
+      if (!res.ok) {
+        const msg = String((data && data.error && data.error.message) || raw || '').slice(0, 200);
+        const er = new Error('HTTP ' + res.status + ' ' + msg);
+        const low = msg.toLowerCase();
+        if (res.status === 429 || /quota|rate.?limit|resource_exhausted/.test(low)) er.kind = /per ?day|daily|perday/.test(low) ? 'daily' : 'quota';
+        else if (res.status === 401 || res.status === 403 || /api key not valid|api_key_invalid|permission/.test(low)) er.kind = 'bad';
+        else if (res.status >= 500) er.kind = 'empty';
+        else er.kind = 'model';
+        throw er;
+      }
+      const parts = (((data || {}).candidates || [])[0] || {}).content;
+      const plist = (parts && parts.parts) || [];
+      let inl = null;
+      for (const p of plist) { const d = p.inlineData || p.inline_data; if (d && d.data) { inl = d; break; } }
+      if (!inl) { const er = new Error('رجعت الخدمة بدون صوت'); er.kind = 'empty'; throw er; }
+      const mime = String(inl.mimeType || inl.mime_type || '');
+      const bytes = b64ToBytes(inl.data);
+      if (!bytes.length) { const er = new Error('وصل صوت فارغ'); er.kind = 'empty'; throw er; }
+      let blob;
+      const isRiff = bytes.length > 12 && bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70;
+      if (isRiff) blob = new Blob([bytes], { type: 'audio/wav' });
+      else if (/mpeg|mp3/i.test(mime)) blob = new Blob([bytes], { type: 'audio/mpeg' });
+      else {
+        const m = /rate=(\d+)/i.exec(mime);
+        blob = pcmToWavBlob(bytes, m ? parseInt(m[1], 10) : 24000);
+      }
+      return URL.createObjectURL(blob);
+    }
+    async function geminiTtsFetchAudio(text, voice) {
+      const list = keyList('gemini');
+      if (!list.length) { const er = new Error('أضف مفتاح Gemini في الإعدادات أولاً، أصوات جوجل تستخدم نفس المفتاح.'); er.fatal = true; throw er; }
+      const dz = diagGemTts();
+      const pref = localStorage.getItem('baheth_gtts_model') || '';
+      let models = GEMINI_TTS_MODELS.filter((m) => !(gttsModelDead[m] > Date.now()));
+      if (!models.length) models = GEMINI_TTS_MODELS.slice();
+      if (pref && models.includes(pref)) models = [pref].concat(models.filter((m) => m !== pref));
+      const notes = [];
+      let anyQuota = false, anyDaily = false, anyBad = false, anyNet = null;
+      for (const model of models) {
+        const start = gttsCursor % list.length;
+        const order = list.map((_, i) => (start + i) % list.length);
+        let tried = 0, modelBroken = false;
+        for (const i of order) {
+          const key = list[i];
+          if (gttsCool[key + '|' + model] > Date.now() || gttsCool[key + '|*'] > Date.now()) { anyQuota = true; continue; }
+          tried++;
+          dz.req++; saveDiag();
+          try {
+            const url = await geminiTtsOnce(model, key, text, voice);
+            dz.ok++; dz.chars = (dz.chars || 0) + text.length; dz.lastOkAt = Date.now(); dz.model = model; saveDiag();
+            gttsCursor = i;
+            try { localStorage.setItem('baheth_gtts_model', model); } catch (_) {}
+            return url;
+          } catch (e) {
+            dz.fail++; dz.lastErr = (model + ' / مفتاح ' + (i + 1) + ': ' + String(e && e.message || e)).slice(0, 220); dz.lastErrAt = Date.now(); saveDiag();
+            notes.push(model + ': ' + String(e && e.message || e).slice(0, 80));
+            const k = e && e.kind;
+            if (k === 'daily') { anyQuota = anyDaily = true; gttsCool[key + '|' + model] = Date.now() + msUntilPacificMidnight(); saveGttsCool(); }
+            else if (k === 'quota') { anyQuota = true; gttsCool[key + '|' + model] = Date.now() + 60000; saveGttsCool(); }
+            else if (k === 'bad') { anyBad = true; gttsCool[key + '|*'] = Date.now() + 3600000; saveGttsCool(); }
+            else if (k === 'net') { anyNet = e; break; }
+            else { modelBroken = true; break; }
+          }
+        }
+        if (anyNet) throw anyNet;
+        if (modelBroken) gttsModelDead[model] = Date.now() + 3600000;
+      }
+      const er = new Error(anyQuota
+        ? (anyDaily ? 'خلصت الحصة اليومية المجانية لأصوات جوجل على كل مفاتيح Gemini. تتجدد نحو الساعة 11 صباحاً بتوقيت الكويت. تقدر تستخدم أصوات جهازك بالأثناء من إعدادات مصدر الصوت.' : 'وصلت لحد الطلبات المسموح لأصوات جوجل. انتظر دقيقة وحاول، أو أضف مفتاح Gemini آخر.')
+        : anyBad ? 'مفاتيح Gemini مرفوضة. تأكد من المفاتيح في الإعدادات.'
+        : 'تعذر توليد الصوت من جوجل (' + notes.slice(-2).join(' | ') + ').');
+      er.fatal = true; throw er;
+    }
+    async function speakGemini(text) {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      azureStopSpeak();
+      azureCancelled = false;
+      const myRun = azureRunId;
+      const chunks = chunkArabic(text, 450);
+      if (!chunks.length) return;
+      const rate = parseFloat(localStorage.getItem('baheth_tts_rate') || '1');
+      const vol = parseFloat(localStorage.getItem('baheth_tts_volume') || '1');
+      const rt = isNaN(rate) ? 1 : Math.min(2, Math.max(0.5, rate));
+      let voice = localStorage.getItem('baheth_tts_voice_gemini') || GEMINI_TTS_VOICES[0].id;
+      if (!GEMINI_TTS_VOICES.some((v) => v.id === voice)) voice = GEMINI_TTS_VOICES[0].id;
+      const promised = {};
+      const fetchChunk = (i) => promised[i] || (promised[i] = geminiTtsFetchAudio(chunks[i], voice));
+      azurePlaying = true;
+      if (typeof announce === 'function') announce('جاري تجهيز الصوت من جوجل...');
+      const urls = [];
+      try {
+        let nextP = fetchChunk(0);
+        nextP.catch(() => {});
+        for (let i = 0; i < chunks.length; i++) {
+          if (azureCancelled || myRun !== azureRunId) break;
+          let url;
+          try { url = await nextP; }
+          catch (e) { if (myRun === azureRunId) alert('❌ ' + (e && e.message ? e.message : 'تعذر جلب الصوت من جوجل.')); break; }
+          urls.push(url);
+          if (azureCancelled || myRun !== azureRunId) break;
+          if (i + 1 < chunks.length) { nextP = fetchChunk(i + 1); nextP.catch(() => {}); }
+          await new Promise((resolve) => {
+            if (!azureAudio) azureAudio = new Audio();
+            const a = azureAudio;
+            a.onended = resolve;
+            a.onerror = () => resolve();
+            a.src = url;
+            try { a.defaultPlaybackRate = rt; a.playbackRate = rt; } catch (_) {}
+            try { a.preservesPitch = true; a.webkitPreservesPitch = true; } catch (_) {}
+            try { a.volume = vol >= 0 && vol <= 1 ? vol : 1; } catch (_) {}
+            const pr = a.play();
+            if (pr && pr.catch) pr.catch(() => resolve());
+          });
+        }
+      } finally {
+        if (myRun === azureRunId) azurePlaying = false;
+        setTimeout(() => urls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) {} }), 30000);
+      }
+    }
 
     function handleKey(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
